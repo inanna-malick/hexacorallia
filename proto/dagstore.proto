@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package dagstore;
+
+service DagStore {
+  rpc GetHashForKey(GetHashForKeyReq) returns (GetHashForKeyResp) {}
+
+  // get a node, return it plus any children of that node reachable via the in-memory cache
+  rpc GetNode(Hash) returns (GetResp) {}
+
+  rpc PutNode(Node) returns (Hash) {}
+
+  rpc PutNodes(BulkPutReq) returns (BulkPutResp) {}
+}
+
+message GetHashForKeyReq {
+  string key = 1;
+}
+
+message GetHashForKeyResp {
+  Hash hash = 1;
+}
+
+message GetResp {
+  Node requested_node = 1;
+  repeated NodeWithHeader extra_nodes = 3;
+}
+
+message NodeWithHeader {
+    Header header = 1;
+    Node node = 2;
+}
+
+message BulkPutReq {
+  BulkPutNode root_node = 1;
+  repeated BulkPutNodeWithHash nodes = 2;
+
+  // NOTE: to be useful, shouldn't this also update some key-hash mapping
+  // NOTE: with the new hash?
+  // optional check-and-set - only write if cas_key is required_previous_hash
+  CheckAndSet cas = 3;
+}
+
+message CheckAndSet {
+  Hash required_previous_hash = 1;
+  string cas_key = 2;
+}
+
+message BulkPutResp {
+  Hash root_hash = 1;
+  repeated BulkPutRespPair additional_uploaded = 2;
+}
+
+message BulkPutRespPair {
+  Hash hash = 1;
+  Id client_id = 2;
+}
+
+message BulkPutLink {
+  oneof link {
+    Header in_store = 1;
+    Id in_req = 2;
+  }
+}
+
+message BulkPutNodeWithHash {
+  Id client_side_hash = 1;
+  BulkPutNode node = 2;
+}
+
+message BulkPutNode {
+  bytes data = 1;
+  repeated BulkPutLink links = 2;
+}
+
+message Id {
+  uint32 id_data = 1; // just an int, no need for b16
+}
+
+message Hash {
+  bytes hash_data = 1; // [u8; 32], blake2 output
+}
+
+message Header {
+  Id header_id = 1;
+  Hash header_hash = 2;
+}
+
+message Node {
+  bytes node_data = 1;
+  repeated Header node_links = 2;
+}

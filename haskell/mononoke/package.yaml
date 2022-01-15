@@ -1,0 +1,101 @@
+name: mononoke 
+version: 0.1.0.0
+synopsis: merkle all the things
+github: inanna-malick/merklenoke 
+author: Inanna Malick
+category: Development
+
+ghc-options: -Wall
+
+default-extensions:
+  - DerivingStrategies
+  - DeriveFunctor
+  - DeriveFoldable
+  - DeriveGeneric
+  - DeriveTraversable
+  - DataKinds
+  - FlexibleContexts
+  - FlexibleInstances
+  - LambdaCase
+  - KindSignatures
+  - NoStarIsType
+  - OverloadedStrings
+  - PolyKinds
+  - ScopedTypeVariables
+  - TupleSections
+  - StandaloneDeriving
+  - TemplateHaskell
+  - TypeApplications
+  - TypeOperators
+
+dependencies:
+  - base >=4.8
+  - aeson
+  - base16-bytestring # used for hashes
+  - base64-bytestring
+  - clay
+  - containers
+  - cryptonite
+  - bytestring
+  - data-fix
+  - directory
+  - deriving-compat
+  - free
+  - http-client
+  - hedgehog
+  - memory
+  - mtl
+  - mu-grpc-client
+  - mu-protobuf
+  - mu-schema
+  - network
+  - optparse-applicative
+  - recursion-schemes
+  - safe-exceptions
+  - singletons
+  - split
+  - stm
+  - text
+  - transformers
+  - warp
+  - threepenny-gui
+  - threepenny-gui-flexbox
+
+
+library:
+  source-dirs: src
+  exposed-modules:
+    - Merkle.App
+    - Merkle.Bonsai.MergeTrie
+    - Merkle.Bonsai.Types
+    - Merkle.GUI.BrowseWIPT
+    - Merkle.GUI.CSS
+    - Merkle.GUI.Elements
+    - Merkle.GUI.Messages
+    - Merkle.GUI.Modal
+    - Merkle.GUI.WorkingMergeTrie
+    - Merkle.GUI.State
+    - Merkle.GUI.Core
+    - Merkle.Generic.BlakeHash
+    - Merkle.Generic.HRecursionSchemes
+
+executable:
+  main: Main.hs
+  source-dirs: app
+  dependencies:
+    - mononoke 
+
+tests:
+  spec:
+    main: AppTest.hs
+    source-dirs:
+      - test
+    dependencies:
+      - directory
+      - hspec
+      - mononoke
+      - HUnit
+      - temporary
+      - QuickCheck
+      - process
+    build-tools: hspec-discover

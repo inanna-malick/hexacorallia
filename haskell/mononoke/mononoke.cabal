@@ -1,0 +1,232 @@
+cabal-version: 1.12
+
+-- This file has been generated from package.yaml by hpack version 0.34.4.
+--
+-- see: https://github.com/sol/hpack
+
+name:           mononoke
+version:        0.1.0.0
+synopsis:       merkle all the things
+category:       Development
+homepage:       https://github.com/inanna-malick/merklenoke#readme
+bug-reports:    https://github.com/inanna-malick/merklenoke/issues
+author:         Inanna Malick
+maintainer:     Inanna Malick
+license:        BSD3
+license-file:   LICENSE
+build-type:     Simple
+
+source-repository head
+  type: git
+  location: https://github.com/inanna-malick/merklenoke
+
+library
+  exposed-modules:
+      Merkle.App
+      Merkle.Bonsai.MergeTrie
+      Merkle.Bonsai.Types
+      Merkle.GUI.BrowseWIPT
+      Merkle.GUI.CSS
+      Merkle.GUI.Elements
+      Merkle.GUI.Messages
+      Merkle.GUI.Modal
+      Merkle.GUI.WorkingMergeTrie
+      Merkle.GUI.State
+      Merkle.GUI.Core
+      Merkle.Generic.BlakeHash
+      Merkle.Generic.HRecursionSchemes
+  other-modules:
+      Merkle.Bonsai.MergeTrie.Render
+      Merkle.Bonsai.Types.Render
+      Merkle.Generic.DAGStore
+      Merkle.Generic.Merkle
+      Merkle.Render.Utils
+      Paths_mononoke
+  hs-source-dirs:
+      src
+  default-extensions:
+      DerivingStrategies
+      DeriveFunctor
+      DeriveFoldable
+      DeriveGeneric
+      DeriveTraversable
+      DataKinds
+      FlexibleContexts
+      FlexibleInstances
+      LambdaCase
+      KindSignatures
+      NoStarIsType
+      OverloadedStrings
+      PolyKinds
+      ScopedTypeVariables
+      TupleSections
+      StandaloneDeriving
+      TemplateHaskell
+      TypeApplications
+      TypeOperators
+  ghc-options: -Wall
+  build-depends:
+      aeson
+    , base >=4.8
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , clay
+    , containers
+    , cryptonite
+    , data-fix
+    , deriving-compat
+    , directory
+    , free
+    , hedgehog
+    , http-client
+    , memory
+    , mtl
+    , mu-grpc-client
+    , mu-protobuf
+    , mu-schema
+    , network
+    , optparse-applicative
+    , recursion-schemes
+    , safe-exceptions
+    , singletons
+    , split
+    , stm
+    , text
+    , threepenny-gui
+    , threepenny-gui-flexbox
+    , transformers
+    , warp
+  default-language: Haskell2010
+
+executable mononoke
+  main-is: Main.hs
+  other-modules:
+      Paths_mononoke
+  hs-source-dirs:
+      app
+  default-extensions:
+      DerivingStrategies
+      DeriveFunctor
+      DeriveFoldable
+      DeriveGeneric
+      DeriveTraversable
+      DataKinds
+      FlexibleContexts
+      FlexibleInstances
+      LambdaCase
+      KindSignatures
+      NoStarIsType
+      OverloadedStrings
+      PolyKinds
+      ScopedTypeVariables
+      TupleSections
+      StandaloneDeriving
+      TemplateHaskell
+      TypeApplications
+      TypeOperators
+  ghc-options: -Wall
+  build-depends:
+      aeson
+    , base >=4.8
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , clay
+    , containers
+    , cryptonite
+    , data-fix
+    , deriving-compat
+    , directory
+    , free
+    , hedgehog
+    , http-client
+    , memory
+    , mononoke
+    , mtl
+    , mu-grpc-client
+    , mu-protobuf
+    , mu-schema
+    , network
+    , optparse-applicative
+    , recursion-schemes
+    , safe-exceptions
+    , singletons
+    , split
+    , stm
+    , text
+    , threepenny-gui
+    , threepenny-gui-flexbox
+    , transformers
+    , warp
+  default-language: Haskell2010
+
+test-suite spec
+  type: exitcode-stdio-1.0
+  main-is: AppTest.hs
+  other-modules:
+      Paths_mononoke
+  hs-source-dirs:
+      test
+  default-extensions:
+      DerivingStrategies
+      DeriveFunctor
+      DeriveFoldable
+      DeriveGeneric
+      DeriveTraversable
+      DataKinds
+      FlexibleContexts
+      FlexibleInstances
+      LambdaCase
+      KindSignatures
+      NoStarIsType
+      OverloadedStrings
+      PolyKinds
+      ScopedTypeVariables
+      TupleSections
+      StandaloneDeriving
+      TemplateHaskell
+      TypeApplications
+      TypeOperators
+  ghc-options: -Wall
+  build-tool-depends:
+      hspec-discover:hspec-discover
+  build-depends:
+      HUnit
+    , QuickCheck
+    , aeson
+    , base >=4.8
+    , base16-bytestring
+    , base64-bytestring
+    , bytestring
+    , clay
+    , containers
+    , cryptonite
+    , data-fix
+    , deriving-compat
+    , directory
+    , free
+    , hedgehog
+    , hspec
+    , http-client
+    , memory
+    , mononoke
+    , mtl
+    , mu-grpc-client
+    , mu-protobuf
+    , mu-schema
+    , network
+    , optparse-applicative
+    , process
+    , recursion-schemes
+    , safe-exceptions
+    , singletons
+    , split
+    , stm
+    , temporary
+    , text
+    , threepenny-gui
+    , threepenny-gui-flexbox
+    , transformers
+    , warp
+  default-language: Haskell2010

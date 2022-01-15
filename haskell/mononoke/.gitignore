@@ -1,0 +1,9 @@
+dist/*
+cabal.sandbox.config
+.cabal-sandbox/*
+tmp/*
+.stack-work/*
+
+hgit.cabal
+
+.#*

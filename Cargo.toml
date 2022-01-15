@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "rust/dag-store",
+    "rust/dag-store-types",
+]
