@@ -11,6 +11,7 @@
 module Merkle.Bonsai.Types
   ( module Merkle.Bonsai.Types
   , Hash
+  , Generic.sRead, Generic.sWrite
   ) where
 
 
@@ -31,6 +32,7 @@ import qualified Data.Text as T
 --------------------------------------------
 import           Merkle.Generic.BlakeHash
 import qualified Merkle.Generic.DAGStore as DAG
+import qualified Merkle.Generic.Store as Generic
 import           Merkle.Generic.HRecursionSchemes as HR -- YOLO 420 SHINY AND CHROME
 import qualified Merkle.Generic.Merkle as M
 --------------------------------------------
@@ -475,26 +477,22 @@ putBlobStore s h m bs = case s of
 type StoreRead  m = NatM m Hash (M Hash)
 type StoreWrite m = NatM m (M Hash) Hash
 
-data Store m
-  = Store
-  { sRead  :: StoreRead  m
-  , sWrite :: StoreWrite m
-  }
+type Store m = Generic.Store m M
 
 
 lazyLoadHash :: forall m. Monad m => Store m -> Hash :-> Term (M.LazyMerkle m M)
 lazyLoadHash store = ana f
   where
     f :: Hash :-> M.LazyMerkle m M Hash
-    f h = M.LazyMerkle h (sRead store h)
+    f h = M.LazyMerkle h (Generic.sRead store h)
 
 
 stmIOStore :: MonadIO m => TVar BlobStore -> Store m
 stmIOStore tvar
   = let store' = stmStore tvar
-     in Store
-  { sRead = \h   -> liftIO $ atomically $ sRead store' h
-  , sWrite = \mh -> liftIO $ atomically $ sWrite store' mh
+     in Generic.Store
+  { Generic.sRead = \h   -> liftIO $ atomically $ Generic.sRead store' h
+  , Generic.sWrite = \mh -> liftIO $ atomically $ Generic.sWrite store' mh
   }
 
 
@@ -502,36 +500,16 @@ stmIOStore tvar
 
 stmStore :: TVar BlobStore -> Store STM
 stmStore tvar
-  = Store
-  { sRead = \h -> do
+  = Generic.Store
+  { Generic.sRead = \h -> do
       bs <- readTVar tvar
       pure . maybe (error "hashmap lookup broken") id $ getBlobStore sing h bs
-  , sWrite = \mh -> do
+  , Generic.sWrite = \mh -> do
       let h = hashM mh
       modifyTVar tvar $ \bs ->
         putBlobStore sing h mh bs
       pure h
   }
-
-
-getM
-  :: forall m
-   . ( MonadError String m
-     , MonadIO m
-     )
-  => DAG.GrpcClient
-  -> NatM m Hash (DAG.PartialTree M)
-getM client = DAG.get client decodeM
-
-getM'
-  :: forall m
-   . ( MonadError String m
-     , MonadIO m
-     )
-  => DAG.GrpcClient
-  -> NatM m Hash (M Hash)
-getM' client h = getM client h >>= pure . hfmap (unCxt (_tag . getHC) id)
-
 
 mkDagStore
   :: forall m
@@ -539,11 +517,4 @@ mkDagStore
      , MonadIO m
      )
   => DAG.GrpcClient -> Store m
-
-mkDagStore client
-  = Store
-  { sRead = getM' client
-  , sWrite = DAG.put client AE.encode
-  }
-
-
+mkDagStore = DAG.mkDagStore AE.encode decodeM

@@ -269,7 +269,7 @@ makeSnapshot commit index storeRead = do
     pure snap
 
 
-
+-- TODO: this is, I guess, what it do (?) use this in the new App module yo
 -- | build a snapshot for a commit, recursively descending
 --   into parent commits to build snapshots if neccessary
 makeMT

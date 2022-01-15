@@ -40,6 +40,8 @@ library
       Merkle.Bonsai.Types.Render
       Merkle.Generic.DAGStore
       Merkle.Generic.Merkle
+      Merkle.Generic.Store
+      Merkle.GUI.App
       Merkle.Render.Utils
       Paths_mononoke
   hs-source-dirs:

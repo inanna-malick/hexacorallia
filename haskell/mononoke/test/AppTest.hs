@@ -27,7 +27,7 @@ main = hspec $ do
 
 
 testInitCommit :: FilePath -> IO ()
-testInitCommit root = wrapper (a >>= expect) 
+testInitCommit root = wrapper (a >>= expect)
   where
     -- NOTE: with regard to directory run in, lol
     wrapper action = P.withCreateProcess (P.proc "../../run_test_dagstore" [concatPath dagStoreRoot, show port]) { P.std_out = P.Inherit, P.std_err = P.Inherit } $
@@ -35,7 +35,7 @@ testInitCommit root = wrapper (a >>= expect)
                        -- wait for app to start, lmao. todo: be better, lol. lol.
                        threadDelay 1000000
                        action
-                
+
     testRoot, dagStoreRoot :: NEL.NonEmpty Path
     testRoot = pure root <> (pure "test")
     dagStoreRoot = pure root <> (pure "dagstore")
@@ -52,7 +52,7 @@ testInitCommit root = wrapper (a >>= expect)
             liftIO $ putStrLn "prebuild"
             buildFT testRoot testFT
             liftIO $ putStrLn "postbuild"
-            App.init testRoot
+            App.initLocalState "localhost" 8080 testRoot
             liftIO $ putStrLn "postinit"
             -- ls <- App.readLocalState (pure root)
             App.commit testRoot "first commit"

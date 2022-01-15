@@ -36,6 +36,7 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Const (Const(..))
 import           Merkle.Generic.HRecursionSchemes
+import           Merkle.Generic.Store
 import           Data.Singletons.TH
 import           Data.Word
 import qualified Control.Monad.State as S
@@ -48,6 +49,34 @@ import           Network.Socket (PortNumber)
 
 
 grpc "GRPCStore" id "../../proto/dagstore.proto"
+
+
+
+
+mkDagStore
+  :: forall m f
+   . ( MonadError String m
+     , MonadIO m
+     , HFunctor f
+     , HTraversable f
+     )
+  => f (Const Id) :=> BL.ByteString
+  -> NatM (Either String) (Const BL.ByteString) (f (Const Id))
+  -> GrpcClient
+  -> Store m f
+mkDagStore encode decode client
+  = Store
+  { sRead = getM'
+  , sWrite = put client encode
+  }
+  where getM
+          :: NatM m BH.Hash (PartialTree f)
+        getM = get client decode
+
+        getM'
+          :: NatM m BH.Hash (f BH.Hash)
+        getM' h = getM h >>= pure . hfmap (unCxt (_tag . getHC) id)
+
 
 data Id
   = Id { id_data :: Word32 }

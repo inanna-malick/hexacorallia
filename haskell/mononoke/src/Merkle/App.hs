@@ -20,27 +20,63 @@ import           Data.List.NonEmpty (NonEmpty)
 import           Data.Aeson as AE
 import GHC.Generics
 
-
+import           Merkle.GUI.App (mononokeGUI)
 
 empty :: Applicative m => LMMT m 'FileTree
 empty = liftLMMT $ Term $ Dir M.empty
 
-
+-- TODO 2
+-- implement toml config file for dag app and for hexa
+-- check below list, I think it's mb stale
 
 -- commands to implement:
--- mkbranch: create branch
--- delbranch: delete branch
--- checkout: impose remote state on local subdir (note to self: use containers to test this)
--- commit: commit all state in repo with message
--- merge: list of commits, merge all into current commit, simple diff resolution (?) or fail
---  - OR: enter merge in progress state, 'current commit' is instead NEL of parents, resolution pending?
 
 -- diff: show extant changes (basically just commit dry run, super easy kinda )
-
-
+type Addr = String
+type Message = String
+type BranchName = String
+type Port = Integer
+-- all commands except for Init must be run in the root dir of an initialized repo
+data Command
+  = StartGUI Addr Port
+  | InitializeRepo Addr Port -- init repo in current dir
+  | CreateCommit Message [BranchName] -- commit all diffs in current dir, merging the provided branches if any
+  | ShowUncommitedChanges -- show diffs in current dir
+  | CreateBranch BranchName-- create a branch
+  | DeleteBranch BranchName-- create a branch
+  | CheckoutBranch BranchName -- checkout an existing branch, imposing it on the current repo
 -- NOTE: no need for snapshot browser/blame/etc, that's all via the web UI
 
--- status: show current branch, also list modified files (stretch goal, can just cat json state)
+executeCommand
+  :: forall m
+   . ( MonadError String m
+     , MonadIO m
+     )
+  => Command
+  -> m ()
+executeCommand (StartGUI addr port) = liftIO mononokeGUI -- addr pmort
+executeCommand (InitializeRepo addr port) = do
+          currentDir <- liftIO getCurrentDirectory
+          initLocalState addr port (pure currentDir)-- TODO need current dir!
+executeCommand (CreateCommit msg merges) = do
+          currentDir <- liftIO getCurrentDirectory
+          _changes <- commit (pure currentDir) msg
+          pure ()
+executeCommand ShowUncommitedChanges = undefined
+executeCommand (CreateBranch branchName) = do
+          currentDir <- pure <$> liftIO getCurrentDirectory
+          state <- readLocalState currentDir
+          state' <- either throwError pure $ mkBranch branchName state
+          writeLocalState currentDir state'
+executeCommand (DeleteBranch branchName) = do
+          currentDir <- pure <$> liftIO getCurrentDirectory
+          state <- readLocalState currentDir
+          state' <- either throwError pure $ delBranch branchName state
+          writeLocalState currentDir state'
+executeCommand (CheckoutBranch branchName) = undefined
+
+-- TODO: fn that checks out a branch but only if there are no diffs
+-- TODO: fun/spicy part is imposing 
 
 -- branch off current commit
 mkBranch :: String -> LocalState -> Either String LocalState
@@ -51,6 +87,7 @@ mkBranch name ls = case M.member name (branches ls) of
 -- delete existing branch
 delBranch :: String -> LocalState -> Either String LocalState
 delBranch name ls = case M.member name (branches ls) of
+  -- TODO: error if current branch
   False -> Right $ ls { branches = M.delete name $ branches ls }
   True  -> Left $ "del branch " ++ name ++ " that doesn't exist"
 
@@ -76,52 +113,43 @@ instance FromJSON LocalState
 
 
 
-initialLocalState
-  :: forall m
-   . ( MonadIO m
-     , MonadError String m
-     )
-  => String -- store addr
-  -> Integer -- store port
-  -> m LocalState
-initialLocalState addr port = do
-  let clientConfig = mkGRPCClient addr (fromInteger port)
-  client <- mkClient clientConfig
-  let store = mkDagStore client
-  emptyCommit <- sWrite store $ NullCommit
-  pure $ LocalState
-       { backingStoreAddr   = addr
-       , backingStorePort   = port
-       , snapshotMappings   = M.empty
-       , branches           = M.empty
-       , currentCommit      = emptyCommit
-       , currentBranch      = Just "main"
-       }
-
 
 -- set up dir with initial state
-init
+initLocalState
   :: forall m
    . ( MonadError String m
      , MonadIO m
      )
-  => NonEmpty Path
+  => Addr
+  -> Port
+  -> NonEmpty Path
   -> m ()
-init path = do
+initLocalState addr port path = do
   let path' = concatPath $ path <> pure localStateName
   -- check if exists
   isFile <- liftIO $ doesFileExist path'
   case isFile of
     True -> do
       throwError $ "state file already exists at " ++ path'
-    False ->
-      initialLocalState "localhost" 8080 >>= writeLocalState path
+    False -> do
+      let clientConfig = mkGRPCClient addr (fromInteger port)
+      client <- mkClient clientConfig
+      let store = mkDagStore client
+      emptyCommit <- sWrite store $ NullCommit
+      let state = LocalState
+                { backingStoreAddr   = addr
+                , backingStorePort   = port
+                , snapshotMappings   = M.empty
+                , branches           = M.empty
+                , currentCommit      = emptyCommit
+                , currentBranch      = Just "main"
+                }
+      writeLocalState path state
   pure ()
 
 
 localStateName :: Path
 localStateName = ".bonsai.state"
-
 
 
 readLocalState
@@ -148,9 +176,7 @@ writeLocalState containingDir ls = do
   liftIO $ encodeFile path ls
 
 
--- PLAN: app that runs in dir w/ app root, hits remote DAG store server
--- PLAN: same binary for both
-
+-- TODO: needs to be merge aware - maybe _just_ build WIPT?
 commit
   :: forall m
    . ( MonadError String m
@@ -166,7 +192,7 @@ commit root commitMsg = do
   let store = mkDagStore client
   snapshot <- case M.lookup (currentCommit localState) (snapshotMappings localState) of
     Nothing -> do
-      lastCommit <- lmLazy $ unTerm $ lazyLoadHash store (currentCommit localState)
+      lastCommit <- lazyMerkleFetch $ unTerm $ lazyLoadHash store (currentCommit localState)
       let lastCommit' :: M (WIPT m) 'CommitT
             = hfmap (unmodifiedWIP . toLMT) lastCommit
       snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)
