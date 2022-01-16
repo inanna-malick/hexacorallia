@@ -24,8 +24,8 @@
 module Merkle.Generic.DAGStore
   ( GrpcClient
   , module Merkle.Generic.DAGStore
-  , CanonicalEncoding(..)
-  , Id
+  , CanonicalForm(..)
+  , Canonical.Id
   ) where
 
 import qualified Data.Aeson
@@ -43,6 +43,8 @@ import           Data.Singletons.TH
 import           Data.Word
 import qualified Control.Monad.State as S
 import qualified Merkle.Generic.BlakeHash as BH;
+import qualified Merkle.Generic.CanonicalForm as Canonical;
+import           Merkle.Generic.CanonicalForm (CanonicalForm)
 import           Merkle.Generic.DAGStore.Types
 import           Data.Functor.Identity
 import           Data.Functor.Classes
@@ -57,7 +59,7 @@ mkDagStore
      , MonadIO m
      , HFunctor f
      , HTraversable f
-     , CanonicalEncoding f
+     , CanonicalForm f
      )
   => GrpcClient
   -> Store m f
@@ -103,12 +105,12 @@ get
    . ( MonadError String m
      , MonadIO m
      , HTraversable f
-     , CanonicalEncoding f
+     , CanonicalForm f
      )
   => GrpcClient
   -> NatM m BH.Hash (PartialTree f)
 get client (Const h) = do
-  let hash = Hash $ BH.unpackHash' h
+  let hash = Canonical.Hash $ BH.unpackHash' h
   liftIO $ putStrLn $ "GET node"
   response :: GRpcReply GetRespP
     <- liftIO $ gRpcCall @'MsgProtoBuf @DagStore @"DagStore" @"GetNode" client hash
@@ -124,14 +126,14 @@ put
    . ( MonadError String m
      , MonadIO m
      , HTraversable f
-     , CanonicalEncoding f
+     , CanonicalForm f
      )
   => GrpcClient
   -> NatM m (f BH.Hash) BH.Hash
 put client m = do
-  let n = unrequireFields $ hashToId m
+  let n = fromCanonicalNode $ Canonical.hashToId m
   liftIO $ putStrLn $ "PUT node"
-  response :: GRpcReply Hash
+  response :: GRpcReply Canonical.Hash
     <- liftIO $ gRpcCall @'MsgProtoBuf @DagStore @"DagStore" @"PutNode" client n
   case response of
     GRpcOk ph -> liftEither $ fromProtoHash $ Const ph

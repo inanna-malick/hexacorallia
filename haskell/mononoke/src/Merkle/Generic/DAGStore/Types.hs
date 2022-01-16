@@ -38,7 +38,8 @@ import           Data.Singletons.TH
 import           Data.Word
 import qualified Control.Monad.State as S
 import qualified Merkle.Generic.BlakeHash as BH;
-import           Data.Functor.Identity
+import qualified Merkle.Generic.CanonicalForm as Canonical;
+import           Merkle.Generic.CanonicalForm (CanonicalForm)
 import           Data.Functor.Classes
 import           Data.ByteString.Builder as BB (word32LE, toLazyByteString)
 import           Control.Monad.Except
@@ -47,81 +48,48 @@ import           Network.Socket (PortNumber)
 grpc "GRPCStore" id "../../proto/dagstore.proto"
 
 
-
--- | some canonical encoding (such that it can be stored in a hash store)
---   with decode function
-class CanonicalEncoding f where
-    ceEncode :: f (Const Id) :=> BL.ByteString
-    ceDecode :: NatM (Either String) (Const BL.ByteString) (f (Const Id))
-
-    canonicalHash :: HTraversable f => f BH.Hash :-> BH.Hash
-    canonicalHash = Const . nodeToCanonicalHash . hashToId
+instance ToSchema   GRPCStore "Id" Canonical.Id
+instance FromSchema GRPCStore "Id" Canonical.Id
 
 
-data Id
-  = Id { id_data :: Word32 }
-  deriving (Eq, Ord, Show, Generic)
+instance ToSchema   GRPCStore "Hash" Canonical.Hash
+instance FromSchema GRPCStore "Hash" Canonical.Hash
 
-instance Data.Aeson.ToJSON Id where
-    toJSON = Data.Aeson.toJSON . id_data
-    toEncoding = Data.Aeson.toEncoding . id_data
-instance Data.Aeson.FromJSON Id where
-    parseJSON = fmap Id . Data.Aeson.parseJSON
-
-instance ToSchema   GRPCStore "Id" Id
-instance FromSchema GRPCStore "Id" Id
-
-data Hash
-  = Hash { hash_data :: B.ByteString }
-  deriving (Eq, Ord, Show, Generic)
-
-instance ToSchema   GRPCStore "Hash" Hash
-instance FromSchema GRPCStore "Hash" Hash
-
-data Header f
+data Header
   = Header
-  { header_id :: f Id
-  , header_hash :: f Hash
-  } deriving (Generic)
-
-instance Ord1 f => Ord (Header f) where
-  compare (Header id1 h1) (Header id2 h2) = compare1 id1 id2 <> compare1 h1 h2
-
-instance Eq1 f => Eq (Header f) where
-  (Header id1 h1) == (Header id2 h2) = eq1 id1 id2 && eq1 h1 h2
-
-instance Show1 f => Show (Header f) where
-  showsPrec n (Header id1 h1) = showString "id: " . showsPrec1 n id1 . showString ", hash: " . showsPrec1 n h1
-
-instance ToSchema   GRPCStore "Header" (Header Maybe)
-instance FromSchema GRPCStore "Header" (Header Maybe)
-
-data Node f
-  = Node
-  { node_data :: B.ByteString
-  , node_links :: [Header f]
+  { header_id :: Maybe Canonical.Id
+  , header_hash :: Maybe Canonical.Hash
   } deriving (Eq, Ord, Show, Generic)
 
-instance ToSchema   GRPCStore "Node" (Node Maybe)
-instance FromSchema GRPCStore "Node" (Node Maybe)
+instance ToSchema   GRPCStore "Header" Header
+instance FromSchema GRPCStore "Header" Header
 
-requireFields :: Node Maybe -> Maybe (Node Identity)
-requireFields (Node nd nl) =  Node nd <$> traverse requireHeaderFields nl
+data Node
+  = Node
+  { node_data :: B.ByteString
+  , node_links :: [Header]
+  } deriving (Eq, Ord, Show, Generic)
 
-requireHeaderFields :: Header Maybe -> Maybe (Header Identity)
-requireHeaderFields (Header (Just hid) (Just hh)) = Just $ Header (Identity hid) (Identity hh)
-requireHeaderFields (Header _ _)                  = Nothing
+instance ToSchema   GRPCStore "Node" Node
+instance FromSchema GRPCStore "Node" Node
 
-unrequireFields :: Node Identity -> Node Maybe
-unrequireFields (Node nd nl) = Node nd $ fmap unrequireHeaderFields nl
+toCanonicalNode :: Node -> Maybe Canonical.Node
+toCanonicalNode (Node nd nl) =  Canonical.Node nd <$> traverse toCanonicalHeader nl
 
-unrequireHeaderFields :: Header Identity -> Header Maybe
-unrequireHeaderFields (Header (Identity hid) (Identity hh)) = Header (Just hid) (Just hh)
+toCanonicalHeader :: Header -> Maybe Canonical.Header
+toCanonicalHeader (Header (Just hid) (Just hh)) = Just $ Canonical.Header hid hh
+toCanonicalHeader (Header _ _)                  = Nothing
+
+fromCanonicalNode :: Canonical.Node -> Node
+fromCanonicalNode (Canonical.Node nd nl) = Node nd $ fmap fromCanonicalHeader nl
+
+fromCanonicalHeader :: Canonical.Header -> Header
+fromCanonicalHeader (Canonical.Header hid hh) = Header (Just hid) (Just hh)
 
 data NodeWithHeaderP
   = NodeWithHeaderP
-  { header :: Maybe (Header Maybe)
-  , node :: Maybe (Node Maybe)
+  { header :: Maybe Header
+  , node :: Maybe Node
   } deriving (Eq, Ord, Show, Generic)
 
 instance ToSchema   GRPCStore "NodeWithHeader" NodeWithHeaderP
@@ -129,87 +97,17 @@ instance FromSchema GRPCStore "NodeWithHeader" NodeWithHeaderP
 
 data GetRespP
   = GetRespP
-  { requested_node :: Maybe (Node Maybe)
+  { requested_node :: Maybe Node
   , extra_nodes :: [NodeWithHeaderP]
   } deriving (Eq, Ord, Show, Generic)
 
 instance ToSchema   GRPCStore "GetResp" GetRespP
 instance FromSchema GRPCStore "GetResp" GetRespP
 
-idToHash
-  :: forall k (f :: (k -> Type) -> k -> Type)
-   . HTraversable f
-  => [(Id, BH.RawBlakeHash)]
-  -> NatM (Either String) (f (Const Id)) (f BH.Hash)
-idToHash headers m = htraverse f m
-  where
-    f :: NatM (Either String) (Const Id) BH.Hash
-    f (Const idp) = Const <$> (maybe (Left $ "ID lookup failure for " ++ show idp) Right $ lookup idp headers)
+fromProtoHash' :: Canonical.Hash -> String `Either` BH.RawBlakeHash
+fromProtoHash' = maybe (Left "invalid hash") (Right) . BH.bytesToHash . Canonical.hash_data
 
-hashToId'
-  :: forall k f (i :: k) x
-   . SingI i
-  => HTraversable f
-  => f (Const x) i
-  -> (f (Const Id) i, [(x, Id)])
-hashToId' m = flip S.runState [] $ hmapM f m
-  where
-    f :: NatM (S.State [(x, Id)])
-               (Const x)
-              (Const Id)
-    f (Const rawHash) = do
-      mappings <- S.get
-      let nextId    = Id $ fromInteger $ toInteger $ length mappings
-          mapping   = (rawHash, nextId)
-          mappings' = mappings ++ [mapping]
-      S.put mappings'
-      pure $ Const nextId
-
-
-hashToId
-  :: ( HTraversable f
-     , CanonicalEncoding f
-     )
-  => f BH.Hash :=> Node Identity
-hashToId m = Node
-           { node_data  = BL.toStrict $ ceEncode m'
-           , node_links = headers
-           }
-  where
-    (m', mappings) = hashToId' m
-    headers = fmap f mappings
-    f (rh, idp) = Header
-                { header_id = Identity $ idp
-                , header_hash = Identity $ Hash $ BH.unpackHash' rh
-                }
-
-
-
--- | Blake2s
--- exact copy of this from the rust side:
---
--- use blake2::Digest;
--- let mut hasher = blake2::Blake2s::new();
--- for link in self.links.iter() {
---     hasher.update(&link.id.0.to_be_bytes());
---     hasher.update(link.hash.0.as_slice());
--- }
--- hasher.update(&self.data.0);
--- let hash = hasher.finalize();
--- Hash(hash)
-nodeToCanonicalHash :: Node Identity -> BH.RawBlakeHash
-nodeToCanonicalHash n = BH.doHash' $ links ++ [node_data n]
-  where
-    links = foldMap f (node_links n)
-    f h = [ BL.toStrict $ BB.toLazyByteString $ word32LE $ id_data $ runIdentity $ header_id h
-          , hash_data $ runIdentity $ header_hash h
-          ]
-
-
-fromProtoHash' :: Hash -> String `Either` BH.RawBlakeHash
-fromProtoHash' = maybe (Left "invalid hash") (Right) . BH.bytesToHash . hash_data
-
-fromProtoHash :: NatM (Either String) (Const Hash) BH.Hash
+fromProtoHash :: NatM (Either String) (Const Canonical.Hash) BH.Hash
 fromProtoHash = fmap Const . fromProtoHash' . getConst
 
 
@@ -217,19 +115,19 @@ fromProtoHash = fmap Const . fromProtoHash' . getConst
 fromProto
   :: forall k (f :: (k -> Type) -> k -> Type)
    . ( HTraversable f
-     , CanonicalEncoding f
+     , CanonicalForm f
      )
-  => NatM (Either String) (Const (Node Identity)) (f BH.Hash)
-fromProto (Const Node{node_data, node_links}) = do
-  let f :: Header Identity -> String `Either` (Id, BH.RawBlakeHash)
-      f Header{header_id, header_hash} = do
-        let header_id'  = runIdentity header_id
-        header_hash' <- fromProtoHash' $ runIdentity header_hash
+  => NatM (Either String) (Const Canonical.Node) (f BH.Hash)
+fromProto (Const Canonical.Node{node_data, node_links}) = do
+  let f :: Canonical.Header -> String `Either` (Canonical.Id, BH.RawBlakeHash)
+      f Canonical.Header{header_id, header_hash} = do
+        let header_id'  = header_id
+        header_hash' <- fromProtoHash' header_hash
         pure (header_id', header_hash')
 
   mappings <- traverse f node_links
-  m <- ceDecode (Const $ BL.fromStrict node_data)
-  idToHash mappings m
+  m <- Canonical.fromCanonicalForm (Const $ BL.fromStrict node_data)
+  Canonical.idToHash mappings m
 
 
 type PartialTree f = f (Context (Tagged BH.Hash `HCompose` f) BH.Hash)
@@ -238,24 +136,24 @@ type PartialTree f = f (Context (Tagged BH.Hash `HCompose` f) BH.Hash)
 fromProtoGetResp
   :: forall f
    . ( HTraversable f
-     , CanonicalEncoding f
+     , CanonicalForm f
      )
   => NatM (Either String) (Const GetRespP) (PartialTree f)
 fromProtoGetResp (Const gr) = do
-    let unpackNode :: Maybe (Node Maybe)
-                   -> String `Either` Node Identity
+    let unpackNode :: Maybe Node
+                   -> String `Either` Canonical.Node
         unpackNode mn = do
             pn <- maybe (Left "requested node not present") Right $ mn
-            n  <- maybe (Left "node fields not present") Right $ requireFields pn
+            n  <- maybe (Left "node fields not present") Right $ toCanonicalNode pn
             pure n
 
         unpackNodeWithHeader :: NodeWithHeaderP
-                             -> String `Either` (BH.RawBlakeHash, Node Identity)
+                             -> String `Either` (BH.RawBlakeHash, Canonical.Node)
         unpackNodeWithHeader mnh = do
             n  <- unpackNode $ node mnh
             mh <- maybe (Left "header not present") Right $ header mnh
-            ph <- maybe (Left "header fields not present") Right $ requireHeaderFields mh
-            h  <- fromProtoHash' $ runIdentity $ header_hash ph
+            ph <- maybe (Left "header fields not present") Right $ toCanonicalHeader mh
+            h  <- fromProtoHash' $ Canonical.header_hash ph
             pure (h, n)
 
     node <- (unpackNode $ requested_node gr) >>= fromProto . Const

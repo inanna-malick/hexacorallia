@@ -255,7 +255,7 @@ unmodifiedWIP = Term . HC . L
 modifiedWIP :: M (WIPT m) :-> WIPT m
 modifiedWIP m = Term . HC . R . HC $ Tagged h m
   where
-    h = hashM $ hfmap hashOfWIPT m
+    h = DAG.canonicalHash $ hfmap hashOfWIPT m
 
 modifiedWIP' :: Term M :-> WIPT m
 modifiedWIP' m = hcata (Term . HC . R) $ hashMT m
@@ -273,7 +273,7 @@ liftLMMT :: forall m. Applicative m => Term M :-> LMMT m
 liftLMMT = hcata f
   where
     f x = Term $ HC $ Tagged{ _tag = h x, _elem = HC $ Compose $ pure x}
-    h x = hashM $ hfmap hashOfLMMT x
+    h x = DAG.canonicalHash $ hfmap hashOfLMMT x
 
 
 expandHash :: forall m. Monad m => StoreRead m -> Hash :-> (LMMT m)
@@ -408,16 +408,7 @@ stmIOStore tvar
   }
 
 
--- TODO: remove
 
-
---- -- NONCANNONICAL HASH FN lmao TODO remove
---- -- 1. convert to blake3
---- -- 2. convert to nodeP format
---- -- 3. convert to proto format
---- -- 4. then hash
-hashM :: M Hash :-> Hash
-hashM = Const . doHash' . pure . LB.toStrict . AE.encode
   -- where canonical = $ Client.toProtoM m
 
 hashMT :: Term M :-> Term (Tagged Hash `HCompose` M)
@@ -425,7 +416,7 @@ hashMT m = hcata f m
   where
     f :: M (Term (Tagged Hash `HCompose` M)) :-> Term (Tagged Hash `HCompose` M)
     f x = Term $ HC $ Tagged{ _tag = h x, _elem = x}
-    h x = hashM $ hfmap (_tag . getHC . unTerm) x
+    h x = DAG.canonicalHash $ hfmap (_tag . getHC . unTerm) x
 
 
 stmStore :: TVar BlobStore -> Store STM
@@ -435,21 +426,21 @@ stmStore tvar
       bs <- readTVar tvar
       pure . maybe (error "hashmap lookup broken") id $ getBlobStore sing h bs
   , Generic.sWrite = \mh -> do
-      let h = hashM mh
+      let h = DAG.canonicalHash mh
       modifyTVar tvar $ \bs ->
         putBlobStore sing h mh bs
       pure h
   }
 
 
-instance DAG.CanonicalEncoding M where
-  ceEncode = AE.encode
-  ceDecode
+instance DAG.CanonicalForm M where
+  toCanonicalForm = AE.encode
+  fromCanonicalForm
     :: forall (i :: MTag)
     .  SingI i
     => Const LB.ByteString i
     -> String `Either` (M (Const DAG.Id) i)
-  ceDecode (Const b) = case sing @i of
+  fromCanonicalForm (Const b) = case sing @i of
     SSnapshotT -> AE.eitherDecode b
     SFileTree  -> AE.eitherDecode b
     SCommitT   -> AE.eitherDecode b
