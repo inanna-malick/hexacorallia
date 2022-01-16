@@ -20,6 +20,7 @@ import           Graphics.UI.Threepenny.Core
 import qualified Graphics.UI.Threepenny as UI
 --------------------------------------------
 import           Merkle.Bonsai.Types
+import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagName')
 import           Merkle.GUI.Core
 import           Merkle.GUI.Elements
 import           Merkle.Generic.BlakeHash

@@ -59,23 +59,29 @@ mkDagStore
      , MonadIO m
      , HFunctor f
      , HTraversable f
+     , CanonicalEncoding f
      )
-  => f (Const Id) :=> BL.ByteString
-  -> NatM (Either String) (Const BL.ByteString) (f (Const Id))
-  -> GrpcClient
+  => GrpcClient
   -> Store m f
-mkDagStore encode decode client
+mkDagStore client
   = Store
   { sRead = getM'
-  , sWrite = put client encode
+  , sWrite = put client
   }
   where getM
           :: NatM m BH.Hash (PartialTree f)
-        getM = get client decode
+        getM = get client
 
         getM'
           :: NatM m BH.Hash (f BH.Hash)
         getM' h = getM h >>= pure . hfmap (unCxt (_tag . getHC) id)
+
+
+-- | some canonical encoding (such that it can be stored in a hash store)
+--   with decode function
+class CanonicalEncoding f where
+     ceEncode :: f (Const Id) :=> BL.ByteString
+     ceDecode :: NatM (Either String) (Const BL.ByteString) (f (Const Id))
 
 
 data Id
@@ -187,11 +193,11 @@ get
    . ( MonadError String m
      , MonadIO m
      , HTraversable f
+     , CanonicalEncoding f
      )
   => GrpcClient
-  -> NatM (Either String) (Const BL.ByteString) (f (Const Id))
   -> NatM m BH.Hash (PartialTree f)
-get client decode (Const h) = do
+get client (Const h) = do
   let hash = Hash $ BH.unpackHash' h
   liftIO $ putStrLn $ "GET node"
   response :: GRpcReply GetRespP
@@ -199,7 +205,7 @@ get client decode (Const h) = do
   case response of
     GRpcOk g -> do
       liftIO $ putStrLn $ "GET: resp len " ++ show (length $ extra_nodes g)
-      liftEither $ fromProtoGetResp decode $ Const g
+      liftEither $ fromProtoGetResp $ Const g
     x -> throwError $ "GET: error response was: " ++ show x
 
 
@@ -208,12 +214,12 @@ put
    . ( MonadError String m
      , MonadIO m
      , HTraversable f
+     , CanonicalEncoding f
      )
   => GrpcClient
-  -> f (Const Id) :=> BL.ByteString
   -> NatM m (f BH.Hash) BH.Hash
-put client encode m = do
-  let n = unrequireFields $ toProto encode m
+put client m = do
+  let n = unrequireFields $ toProto m
   liftIO $ putStrLn $ "PUT node"
   response :: GRpcReply Hash
     <- liftIO $ gRpcCall @'MsgProtoBuf @DagStore @"DagStore" @"PutNode" client n
@@ -254,11 +260,12 @@ hashToId m = flip S.runState [] $ hmapM f m
       pure $ Const nextId
 
 toProto
-  :: HTraversable f
-  => f (Const Id) :=> BL.ByteString
-  -> f BH.Hash :=> Node Identity
-toProto encode m = Node
-           { node_data  = BL.toStrict $ encode m'
+  :: ( HTraversable f
+     , CanonicalEncoding f
+     )
+  => f BH.Hash :=> Node Identity
+toProto m = Node
+           { node_data  = BL.toStrict $ ceEncode m'
            , node_links = headers
            }
   where
@@ -307,10 +314,11 @@ fromProtoHash = fmap Const . fromProtoHash' . getConst
 -- -- parse a single node
 fromProto
   :: forall k (f :: (k -> Type) -> k -> Type)
-   . HTraversable f
-  => NatM (Either String) (Const BL.ByteString) (f (Const Id))
-  -> NatM (Either String) (Const (Node Identity)) (f BH.Hash)
-fromProto decode (Const Node{node_data, node_links}) = do
+   . ( HTraversable f
+     , CanonicalEncoding f
+     )
+  => NatM (Either String) (Const (Node Identity)) (f BH.Hash)
+fromProto (Const Node{node_data, node_links}) = do
   let f :: Header Identity -> String `Either` (Id, BH.RawBlakeHash)
       f Header{header_id, header_hash} = do
         let header_id'  = runIdentity header_id
@@ -318,7 +326,7 @@ fromProto decode (Const Node{node_data, node_links}) = do
         pure (header_id', header_hash')
 
   mappings <- traverse f node_links
-  m <- decode (Const $ BL.fromStrict node_data)
+  m <- ceDecode (Const $ BL.fromStrict node_data)
   idToHash mappings m
 
 
@@ -327,10 +335,11 @@ type PartialTree f = f (Context (Tagged BH.Hash `HCompose` f) BH.Hash)
 -- recursively parse nodes building up a tree of them, TODO: a type for that, term of HEither Hash M
 fromProtoGetResp
   :: forall f
-   . HTraversable f
-  => NatM (Either String) (Const BL.ByteString) (f (Const Id))
-  -> NatM (Either String) (Const GetRespP) (PartialTree f)
-fromProtoGetResp decode (Const gr) = do
+   . ( HTraversable f
+     , CanonicalEncoding f
+     )
+  => NatM (Either String) (Const GetRespP) (PartialTree f)
+fromProtoGetResp (Const gr) = do
     let unpackNode :: Maybe (Node Maybe)
                    -> String `Either` Node Identity
         unpackNode mn = do
@@ -347,7 +356,7 @@ fromProtoGetResp decode (Const gr) = do
             h  <- fromProtoHash' $ runIdentity $ header_hash ph
             pure (h, n)
 
-    node <- (unpackNode $ requested_node gr) >>= fromProto decode . Const
+    node <- (unpackNode $ requested_node gr) >>= fromProto . Const
 
     -- at this point we DO NOT HAVE TYPE INFO
     -- so CANNOT decode nodes yet, just raw blake hashes and unparsed nodes
@@ -358,7 +367,7 @@ fromProtoGetResp decode (Const gr) = do
           case lookup (getConst h) nodes of
             Nothing -> pure $ R h
             Just pn -> do
-              nn <- fromProto decode $ Const pn
+              nn <- fromProto $ Const pn
               pure . L . HC $ Tagged h nn
 
     htraverse (anaPartialM deref) node

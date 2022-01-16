@@ -12,6 +12,9 @@ module Merkle.Bonsai.Types
   ( module Merkle.Bonsai.Types
   , Hash
   , Generic.sRead, Generic.sWrite
+  -- components of singleton type tag used for Bonsai GADT
+  , MTag(..)
+  , SMTag(..)
   ) where
 
 
@@ -30,6 +33,7 @@ import qualified Data.Map.Strict as Map
 import           Data.Singletons.TH
 import qualified Data.Text as T
 --------------------------------------------
+import           Merkle.Bonsai.Types.Tags
 import           Merkle.Generic.BlakeHash
 import qualified Merkle.Generic.DAGStore as DAG
 import qualified Merkle.Generic.Store as Generic
@@ -37,10 +41,6 @@ import           Merkle.Generic.HRecursionSchemes as HR -- YOLO 420 SHINY AND CH
 import qualified Merkle.Generic.Merkle as M
 --------------------------------------------
 
-
-$(singletons [d|
-  data MTag = SnapshotT | FileTree | CommitT | BlobT
- |])
 
 type Path = String -- TODO use Text
 
@@ -144,15 +144,6 @@ data M a i where
 
 
 
--- -- NONCANNONICAL HASH FN lmao TODO remove
--- -- 1. convert to blake3
--- -- 2. convert to nodeP format
--- -- 3. convert to proto format
--- -- 4. then hash
-hashM :: M Hash :-> Hash
-hashM = Const . doHash' . pure . LB.toStrict . AE.encode
-  -- where canonical = $ Client.toProtoM m
-
 instance ToJSON x => ToJSON (M (Const x) i) where
   toJSON (Snapshot ft oc ps) =
     object [ "file_tree" .= ft
@@ -213,18 +204,6 @@ instance FromJSON x => FromJSON (M (Const x) 'BlobT) where
     parseJSON invalid    =
         AE.prependFailure "parsing blob failed, "
             (AE.typeMismatch "String" invalid)
-
-decodeM
-  :: forall (i :: MTag) x
-   . FromJSON x
-  => SingI i
-  => Const LB.ByteString i
-  -> String `Either` (M (Const x) i)
-decodeM (Const b) = case sing @i of
-  SSnapshotT -> AE.eitherDecode b
-  SFileTree  -> AE.eitherDecode b
-  SCommitT   -> AE.eitherDecode b
-  SBlobT     -> AE.eitherDecode b
 
 
 
@@ -288,27 +267,6 @@ showHash h =
    in "[" ++ typeTagName (sing :: Sing i) ++ ":" ++ h' ++ "]"
 
 
-typeTagFAIcon' :: forall (i :: MTag) x. SingI i => x i -> String
-typeTagFAIcon' _ = typeTagFAIcon (sing @i)
-
-typeTagFAIcon :: forall (i :: MTag). Sing i -> String
-typeTagFAIcon s = case s of
-  SSnapshotT -> "fa-database"
-  SFileTree  -> "fa-folder-open"
-  SCommitT   -> "fa-history"
-  SBlobT     -> "fa-file"
-
-
-typeTagName' :: forall (i :: MTag) x. SingI i => x i -> String
-typeTagName' _ = typeTagName (sing @i)
-
-typeTagName :: forall (i :: MTag). Sing i -> String
-typeTagName s = case s of
-  SSnapshotT -> "snapshot"
-  SFileTree  -> "filetree"
-  SCommitT   -> "commit"
-  SBlobT     -> "blob"
-
 
 -- | hash and lift (TODO: THIS IS NEEDED - dip into merkle lib for refs)
 liftLMMT :: forall m. Applicative m => Term M :-> LMMT m
@@ -317,13 +275,6 @@ liftLMMT = hcata f
     f x = Term $ HC $ Tagged{ _tag = h x, _elem = HC $ Compose $ pure x}
     h x = hashM $ hfmap hashOfLMMT x
 
-
-hashMT :: Term M :-> Term (Tagged Hash `HCompose` M)
-hashMT m = hcata f m
-  where
-    f :: M (Term (Tagged Hash `HCompose` M)) :-> Term (Tagged Hash `HCompose` M)
-    f x = Term $ HC $ Tagged{ _tag = h x, _elem = x}
-    h x = hashM $ hfmap (_tag . getHC . unTerm) x
 
 expandHash :: forall m. Monad m => StoreRead m -> Hash :-> (LMMT m)
 expandHash get = ana f
@@ -335,45 +286,6 @@ expandHash get = ana f
 uploadM :: Monad m => StoreWrite m -> NatM m (Term M) Hash
 uploadM upload = hcataM upload
 
-
--- ++ /a/foo foo
--- ++ /a/bar bar
--- ++ /baz baz
-commit0 :: Term M 'CommitT
-commit0 = Term $ Commit "c0: first commit" changes parents
-  where
-    changes = [c1, c2, c3]
-    c1 = add ("a" :| ["foo"]) . Term $ Blob "foo"
-    c2 = add ("a" :| ["bar"]) . Term $ Blob "bar"
-    c3 = add ("baz" :| []) . Term $ Blob "baz"
-    parents = Term NullCommit :| []
-
--- ++ /.DS_Store jk
--- -- /a/bar
-commit1 :: Term M 'CommitT
-commit1 = Term $ Commit "c1: askdfj" changes parents
-  where
-    changes = [c1, c2, c3]
-    c1 = add (".DS_Store" :| []) . Term $ Blob "..."
-    c2 = del ("a" :| ["bar"])
-    c3 = add ("baz" :| []) . Term $ Blob "baz with new content"
-    parents = commit0 :| []
-
--- ++ /README todo
-commit2 :: Term M 'CommitT
-commit2 = Term $ Commit "c2: todo: readme" changes parents
-  where
-    changes = [c1]
-    c1 = add ("README" :| []) . Term $ Blob "todo"
-    parents = commit0 :| []
-
--- TODO: should this have 'bar', deleted in 1/2 of parent commits and not changed in this commit?
--- TODO: I think that should have to be resolved (file present in one, absent in other - maybe?)
-commit3 :: Term M 'CommitT
-commit3 = Term $ Commit "c3: merge" [resolvingChange] parents
-  where
-    parents = commit1 :| [commit2]
-    resolvingChange = add ("baz" :| []) . Term $ Blob "baz3"
 
 
 
@@ -496,6 +408,24 @@ stmIOStore tvar
   }
 
 
+-- TODO: remove
+
+
+--- -- NONCANNONICAL HASH FN lmao TODO remove
+--- -- 1. convert to blake3
+--- -- 2. convert to nodeP format
+--- -- 3. convert to proto format
+--- -- 4. then hash
+hashM :: M Hash :-> Hash
+hashM = Const . doHash' . pure . LB.toStrict . AE.encode
+  -- where canonical = $ Client.toProtoM m
+
+hashMT :: Term M :-> Term (Tagged Hash `HCompose` M)
+hashMT m = hcata f m
+  where
+    f :: M (Term (Tagged Hash `HCompose` M)) :-> Term (Tagged Hash `HCompose` M)
+    f x = Term $ HC $ Tagged{ _tag = h x, _elem = x}
+    h x = hashM $ hfmap (_tag . getHC . unTerm) x
 
 
 stmStore :: TVar BlobStore -> Store STM
@@ -511,10 +441,24 @@ stmStore tvar
       pure h
   }
 
+
+instance DAG.CanonicalEncoding M where
+  ceEncode = AE.encode
+  ceDecode
+    :: forall (i :: MTag)
+    .  SingI i
+    => Const LB.ByteString i
+    -> String `Either` (M (Const DAG.Id) i)
+  ceDecode (Const b) = case sing @i of
+    SSnapshotT -> AE.eitherDecode b
+    SFileTree  -> AE.eitherDecode b
+    SCommitT   -> AE.eitherDecode b
+    SBlobT     -> AE.eitherDecode b
+
 mkDagStore
   :: forall m
    . ( MonadError String m
      , MonadIO m
      )
   => DAG.GrpcClient -> Store m
-mkDagStore = DAG.mkDagStore AE.encode decodeM
+mkDagStore = DAG.mkDagStore

@@ -33,4 +33,3 @@ data Store m f
   { sRead  :: NatM m Hash (f Hash)
   , sWrite :: NatM m (f Hash) Hash
   }
-

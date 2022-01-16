@@ -19,6 +19,7 @@ import qualified Graphics.UI.Threepenny as UI
 import           Merkle.Bonsai.MergeTrie
 import qualified Merkle.Bonsai.Types.Render
 import           Merkle.Bonsai.Types
+import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagName')
 import           Merkle.GUI.BrowseWIPT
 import           Merkle.GUI.Core
 import           Merkle.GUI.Elements

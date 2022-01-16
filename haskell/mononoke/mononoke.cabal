@@ -37,7 +37,9 @@ library
       Merkle.Generic.HRecursionSchemes
   other-modules:
       Merkle.Bonsai.MergeTrie.Render
+      Merkle.Bonsai.Types.Examples
       Merkle.Bonsai.Types.Render
+      Merkle.Bonsai.Types.Tags
       Merkle.Generic.DAGStore
       Merkle.Generic.Merkle
       Merkle.Generic.Store

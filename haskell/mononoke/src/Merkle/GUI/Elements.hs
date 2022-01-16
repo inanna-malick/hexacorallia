@@ -8,6 +8,7 @@ import           Data.Singletons.TH (SingI, sing)
 import           Graphics.UI.Threepenny.Core
 import qualified Graphics.UI.Threepenny as UI
 --------------------------------------------
+import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagFAIcon)
 import           Merkle.Bonsai.Types
 import           Merkle.GUI.Core
 --------------------------------------------

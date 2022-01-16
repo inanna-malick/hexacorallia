@@ -104,8 +104,3 @@ wipTreeToPartialMerkleTree
   :: (Functor m, HFunctor f)
   => WIPT m f :-> PartialMerkleTree m f
 wipTreeToPartialMerkleTree = hcata (Term . wipToPartialMerkleTreeLayer)
-
-
-
-
-

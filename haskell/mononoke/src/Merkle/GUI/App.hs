@@ -25,6 +25,8 @@ import qualified Graphics.UI.Threepenny as UI
 import           Graphics.UI.Threepenny.Ext.Flexbox
 --------------------------------------------
 import           Merkle.Bonsai.Types
+import qualified Merkle.Bonsai.Types.Examples as Examples
+import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagName')
 import           Merkle.Bonsai.MergeTrie
 import           Merkle.GUI.CSS
 import           Merkle.GUI.Core
@@ -379,8 +381,8 @@ setup root = void $ do
   blobStoreTvar <- liftIO . atomically $ newTVar emptyBlobStore
   let blobStore = stmIOStore blobStoreTvar
 
-  initCommit <- expandHash (sRead blobStore) <$> uploadM (sWrite blobStore) commit1
-  branchCommit <- expandHash (sRead blobStore) <$> uploadM (sWrite blobStore) commit2
+  initCommit <- expandHash (sRead blobStore) <$> uploadM (sWrite blobStore) Examples.commit1
+  branchCommit <- expandHash (sRead blobStore) <$> uploadM (sWrite blobStore) Examples.commit2
 
   let initialBranchState = BranchState
                          { bsMainBranch = initCommit
