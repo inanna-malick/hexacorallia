@@ -41,6 +41,7 @@ library
       Merkle.Bonsai.Types.Render
       Merkle.Bonsai.Types.Tags
       Merkle.Generic.DAGStore
+      Merkle.Generic.DAGStore.Types
       Merkle.Generic.Merkle
       Merkle.Generic.Store
       Merkle.GUI.App
