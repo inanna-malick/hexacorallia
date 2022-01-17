@@ -409,8 +409,6 @@ stmIOStore tvar
 
 
 
-  -- where canonical = $ Client.toProtoM m
-
 hashMT :: Term M :-> Term (Tagged Hash `HCompose` M)
 hashMT m = hcata f m
   where

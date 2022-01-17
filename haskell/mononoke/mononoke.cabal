@@ -40,6 +40,7 @@ library
       Merkle.Bonsai.Types.Examples
       Merkle.Bonsai.Types.Render
       Merkle.Bonsai.Types.Tags
+      Merkle.Generic.CanonicalForm
       Merkle.Generic.DAGStore
       Merkle.Generic.DAGStore.Types
       Merkle.Generic.Merkle
