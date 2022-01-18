@@ -392,11 +392,11 @@ type StoreWrite m = NatM m (M Hash) Hash
 type Store m = Generic.Store m M
 
 
-lazyLoadHash :: forall m. Monad m => Store m -> Hash :-> Term (M.LazyMerkle m M)
+lazyLoadHash :: forall m. Monad m => Store m -> Hash :-> Term (M.Lazy m M)
 lazyLoadHash store = ana f
   where
-    f :: Hash :-> M.LazyMerkle m M Hash
-    f h = M.LazyMerkle h (Generic.sRead store h)
+    f :: Hash :-> M.Lazy m M Hash
+    f h = M.Lazy h (Generic.sRead store h)
 
 
 stmIOStore :: MonadIO m => TVar BlobStore -> Store m

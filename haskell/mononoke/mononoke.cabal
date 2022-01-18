@@ -44,6 +44,7 @@ library
       Merkle.Generic.DAGStore
       Merkle.Generic.DAGStore.Types
       Merkle.Generic.Merkle
+      Merkle.Generic.Merkle.Inner
       Merkle.Generic.Store
       Merkle.GUI.App
       Merkle.Render.Utils
@@ -70,6 +71,7 @@ library
       TemplateHaskell
       TypeApplications
       TypeOperators
+      OverloadedLabels
   ghc-options: -Wall
   build-depends:
       aeson
@@ -84,6 +86,7 @@ library
     , deriving-compat
     , directory
     , free
+    , generic-optics
     , hedgehog
     , http-client
     , memory
@@ -92,6 +95,7 @@ library
     , mu-protobuf
     , mu-schema
     , network
+    , optics
     , optparse-applicative
     , recursion-schemes
     , safe-exceptions
@@ -131,6 +135,7 @@ executable mononoke
       TemplateHaskell
       TypeApplications
       TypeOperators
+      OverloadedLabels
   ghc-options: -Wall
   build-depends:
       aeson
@@ -145,6 +150,7 @@ executable mononoke
     , deriving-compat
     , directory
     , free
+    , generic-optics
     , hedgehog
     , http-client
     , memory
@@ -154,6 +160,7 @@ executable mononoke
     , mu-protobuf
     , mu-schema
     , network
+    , optics
     , optparse-applicative
     , recursion-schemes
     , safe-exceptions
@@ -194,6 +201,7 @@ test-suite spec
       TemplateHaskell
       TypeApplications
       TypeOperators
+      OverloadedLabels
   ghc-options: -Wall
   build-tool-depends:
       hspec-discover:hspec-discover
@@ -212,6 +220,7 @@ test-suite spec
     , deriving-compat
     , directory
     , free
+    , generic-optics
     , hedgehog
     , hspec
     , http-client
@@ -222,6 +231,7 @@ test-suite spec
     , mu-protobuf
     , mu-schema
     , network
+    , optics
     , optparse-applicative
     , process
     , recursion-schemes

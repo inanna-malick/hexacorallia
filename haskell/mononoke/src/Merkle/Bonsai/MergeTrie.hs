@@ -33,6 +33,7 @@ data SnapshotTrie m a
   = SnapshotTrie
   { -- | all files at this path
     --   using map to enforce only one entry per hash - good idea?
+    -- TODO: figure out why tuple - I think b/c the process needs both list of changes and snapshot style index? idk lol
     stFilesAtPath :: Map (Hash 'FileTree)
                          (WIPT m 'FileTree, SnapshotFile (WIPT m))
   -- | a map of child entities, if any, each either a recursion

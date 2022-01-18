@@ -21,6 +21,8 @@ import           Data.Aeson as AE
 import GHC.Generics
 
 import           Merkle.GUI.App (mononokeGUI)
+import Optics
+
 
 empty :: Applicative m => LMMT m 'FileTree
 empty = liftLMMT $ Term $ Dir M.empty
@@ -192,7 +194,7 @@ commit root commitMsg = do
   let store = mkDagStore client
   snapshot <- case M.lookup (currentCommit localState) (snapshotMappings localState) of
     Nothing -> do
-      lastCommit <- lazyMerkleFetch $ unTerm $ lazyLoadHash store (currentCommit localState)
+      lastCommit <- view #node $ unTerm $ lazyLoadHash store (currentCommit localState)
       let lastCommit' :: M (WIPT m) 'CommitT
             = hfmap (unmodifiedWIP . toLMT) lastCommit
       snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)

@@ -4,12 +4,14 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE StandaloneKindSignatures #-}
+{-# LANGUAGE OverloadedLabels #-}
 
 module Merkle.Generic.Merkle
-  ( LazyMerkle(..), toLMT, fromLMT
-  , LocalMerkle(..), PartialMerkleTreeLayer, PartialMerkleTree, NEPartialMerkleTree
-  , wipToPartialMerkleTreeLayer, wipTreeToPartialMerkleTree
-  , partialMerkleTreeToWIPT, partialMerkleTreeLayerToWIP
+  ( Lazy(..)
+  , Local(..), PartialUpdate(OldStructure, NewStructure)
+  , toLMT, fromLMT
+  , wipToPartialUpdate, wipTreeToPartialUpdateTree
+  , partialUpdateToWIP, partialUpdateTreeToWIPT
   )
   where
 
@@ -18,27 +20,63 @@ import           Data.Functor.Compose
 --------------------------------------------
 import           Merkle.Generic.HRecursionSchemes
 import           Merkle.Generic.BlakeHash
+import           Merkle.Generic.Merkle.Inner
 import           Merkle.Generic.CanonicalForm (CanonicalForm(..))
 --------------------------------------------
+import Optics
 
-type LazyMerkleTree m f = Term (LazyMerkle m f)
 
--- | Remotely persisted node in a merkle Tree
-data LazyMerkle m f g i
-  = LazyMerkle
-  { lazyMerkleHash  :: Hash i
-  , lazyMerkleFetch :: m (f g i)
-  }
 
-instance (Functor m, HFunctor f) => HFunctor (LazyMerkle m f) where
-    hfmap f (LazyMerkle h m) = LazyMerkle h (hfmap f <$> m)
 
--- | Locally constructed node in a merkle Tree
-data LocalMerkle f g i
-  = LocalMerkle
-  { localMerkleHash :: Hash i
-  , localMerkleNode :: f g i
-  }
+
+
+fromLM :: LM m f x :-> Lazy m f x
+fromLM (HC (Tagged h (HC (Compose m)))) = Lazy h m
+
+fromLMT :: (Functor m, HFunctor f) => LMT m f :-> Term (Lazy m f)
+fromLMT = hcata (Term . fromLM)
+
+
+toLM ::  Lazy m f x :-> LM m f x
+toLM l = HC $ Tagged (l ^. #hash) $ HC $ Compose (l ^. #node)
+
+toLMT :: (Functor m, HFunctor f) => Term (Lazy m f) :-> LMT m f
+toLMT = hcata (Term . toLM)
+
+
+-- Lazy Merkle M
+type LM m f = Tagged Hash `HCompose` Compose m `HCompose` f
+type LMT m f = Term (LM m f)
+
+type WIP m f = HEither (LMT m f) `HCompose` Tagged Hash `HCompose` f
+type WIPT m f = Term (WIP m f)
+
+partialUpdateTreeToWIPT
+  :: (Functor m, HFunctor f)
+  => Term (PartialUpdate m f) :-> WIPT m f
+partialUpdateTreeToWIPT = hcata (Term . partialUpdateToWIP)
+
+partialUpdateToWIP
+  :: (Functor m, HFunctor f)
+  => PartialUpdate m f g :-> WIP m f g
+partialUpdateToWIP (OldStructure l) = HC $ L $ toLMT l
+partialUpdateToWIP (NewStructure l) = localLayerToWIP l
+
+localLayerToWIP ::  Local f g :-> WIP m f g
+localLayerToWIP l = HC $ R $ HC $ Tagged (l ^. #hash) (l ^. #node)
+
+
+wipToPartialUpdate
+  :: (Functor m, HFunctor f)
+  => WIP m f g :-> PartialUpdate m f g
+wipToPartialUpdate (HC (L lmt)) = OldStructure $ fromLMT lmt
+wipToPartialUpdate (HC (R (HC (Tagged h n)))) = NewStructure $ Local h n
+
+
+wipTreeToPartialUpdateTree
+  :: (Functor m, HFunctor f)
+  => WIPT m f :-> Term (PartialUpdate m f)
+wipTreeToPartialUpdateTree = hcata (Term . wipToPartialUpdate)
 
 
 liftToLocalMerkle
@@ -47,78 +85,11 @@ liftToLocalMerkle
      , HTraversable f
      , HFunctor f
      )
-  => Term f :-> Term (LocalMerkle f)
+  => Term f :-> Term (Local f)
 liftToLocalMerkle = hcata f
-  where f n = Term $ LocalMerkle (canonicalHash $ hfmap (localMerkleHash . unTerm) n) n
+  where f n = Term $ Local (canonicalHash $ hfmap (view #hash . unTerm) n) n
 
-liftLocalToLazy :: (Applicative m, HFunctor f) => Term (LocalMerkle f) :-> Term (LazyMerkle m f)
+-- -- what if 'm' is Identity for this?
+liftLocalToLazy :: (Applicative m, HFunctor f) => Term (Local f) :-> Term (Lazy m f)
 liftLocalToLazy = hcata f
-  where f (LocalMerkle h n) = Term $ LazyMerkle h (pure n)
-
-type PartialMerkleTree m f = Term (PartialMerkleTreeLayer m f)
-
--- | Single layer of a locally constructed merkle tree with remotely persisted subtrees (or root node)
-data PartialMerkleTreeLayer m f g i
-  = LocalStructure (LocalMerkle f g i)
-  | LazyStructure (LazyMerkleTree m f i)
-
-instance (Functor m, HFunctor f)=> HFunctor (PartialMerkleTreeLayer m f) where
-    hfmap f (LocalStructure l) = LocalStructure $ hfmap f l
-    hfmap f (LazyStructure  l) = LazyStructure    l
-
-
--- | locally constructed merkle tree with remotely persisted subtrees and at
---   least one locally constructed node as the tree root
-type NEPartialMerkleTree m f = LocalMerkle f (Term (PartialMerkleTreeLayer m f))
-
-
-instance HFunctor f => HFunctor (LocalMerkle f) where
-    hfmap f (LocalMerkle h n) = LocalMerkle h (hfmap f n)
-
-
-type LM m f = Tagged Hash `HCompose` Compose m `HCompose` f
-type LMT m f = Term (LM m f)
-
-
-fromLM :: LM m f x :-> LazyMerkle m f x
-fromLM (HC (Tagged h (HC (Compose m)))) = LazyMerkle h m
-
-fromLMT :: (Functor m, HFunctor f) => LMT m f :-> Term (LazyMerkle m f)
-fromLMT = hcata (Term . fromLM)
-
-
-toLM ::  LazyMerkle m f x :-> LM m f x
-toLM (LazyMerkle h m) = HC $ Tagged h $ HC $ Compose m
-
-toLMT :: (Functor m, HFunctor f) => Term (LazyMerkle m f) :-> LMT m f
-toLMT = hcata (Term . toLM)
-
-type WIP m f = HEither (LMT m f) `HCompose` Tagged Hash `HCompose` f
-type WIPT m f = Term (WIP m f)
-
-partialMerkleTreeToWIPT
-  :: (Functor m, HFunctor f)
-  => PartialMerkleTree m f :-> WIPT m f
-partialMerkleTreeToWIPT = hcata (Term . partialMerkleTreeLayerToWIP)
-
-partialMerkleTreeLayerToWIP
-  :: (Functor m, HFunctor f)
-  => PartialMerkleTreeLayer m f g :-> WIP m f g
-partialMerkleTreeLayerToWIP (LazyStructure l) = HC $ L $ toLMT l
-partialMerkleTreeLayerToWIP (LocalStructure l) = localLayerToWIP l
-
-localLayerToWIP ::  LocalMerkle f g :-> WIP m f g
-localLayerToWIP (LocalMerkle h n) = HC $ R $ HC $ Tagged h n
-
-
-wipToPartialMerkleTreeLayer
-  :: (Functor m, HFunctor f)
-  => WIP m f g :-> PartialMerkleTreeLayer m f g
-wipToPartialMerkleTreeLayer (HC (L lmt)) = LazyStructure $ fromLMT lmt
-wipToPartialMerkleTreeLayer (HC (R (HC (Tagged h n)))) = LocalStructure $ LocalMerkle h n
-
-
-wipTreeToPartialMerkleTree
-  :: (Functor m, HFunctor f)
-  => WIPT m f :-> PartialMerkleTree m f
-wipTreeToPartialMerkleTree = hcata (Term . wipToPartialMerkleTreeLayer)
+  where f l = Term $ Lazy (l ^. #hash) (pure $ l ^. #node)

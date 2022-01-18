@@ -27,6 +27,7 @@ default-extensions:
   - TemplateHaskell
   - TypeApplications
   - TypeOperators
+  - OverloadedLabels
 
 dependencies:
   - base >=4.8
@@ -41,6 +42,7 @@ dependencies:
   - directory
   - deriving-compat
   - free
+  - generic-optics
   - http-client
   - hedgehog
   - memory
@@ -49,6 +51,7 @@ dependencies:
   - mu-protobuf
   - mu-schema
   - network
+  - optics
   - optparse-applicative
   - recursion-schemes
   - safe-exceptions
