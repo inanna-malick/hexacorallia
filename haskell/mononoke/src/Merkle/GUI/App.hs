@@ -117,54 +117,16 @@ drawCommitEditor
 drawCommitEditor bs popRequest modifyMergeTrieHandler focusHandler ipc = do
 
   viewCommit <- case ipc of
-    (Just InProgressCommit{..}) -> UI.div #+ [ string "changes:"
-                                             , viewChanges ipcChanges
-                                             , UI.br
-                                             , string "parents:"
-                                             , viewParents ipcParentCommits
-                                             , finalizeCommit
-                                             , UI.br
-                                             , resetCommit
-                                             ]
     Nothing -> string "no in progress commit"
+    _ -> error "TODO remove"
 
   UI.div #+ [ addChanges
             , element viewCommit
             , UI.br
-            , string "add parent to commit: "
-            , addParent
             , string "branches:"
             ]
 
   where
-    addParent   = do
-      let branches = [("main", bsMainBranch bs)] ++ bsBranches bs
-          options = fmap mkOption branches
-          mkOption (s, c) = do
-            opt <- UI.option # set UI.value s # set text s
-            on UI.click opt $ \() -> void $ do
-              liftIO $ modifyMergeTrieHandler (AddParent c)
-            pure opt
-      UI.select #+ options
-
-    finalizeCommit = do
-      finalize <- UI.button # set text "finalize commit [!]"
-      on UI.click finalize $ \() -> void $ do
-        liftIO $ popRequest $ SpawnRequestText "commit message" $ \msg -> liftIO $ do
-          liftIO $ modifyMergeTrieHandler $ Finalize msg
-      pure finalize
-
-    resetCommit = do
-      reset <- UI.button # set text "reset commit [!]"
-      on UI.click reset $ \() -> void $ do
-        liftIO $ modifyMergeTrieHandler Reset
-      pure reset
-
-    viewParents ps = do
-      elems <- toList <$> traverse viewParent ps
-      faUl #+ fmap element elems
-
-    viewParent wipt = faLi focusHandler wipt [] (string "parent commit") UI.div
 
     renderChange :: NonEmpty Path -> ChangeType (WIPT UI) -> UI Element
     renderChange p (Add wipt) =
@@ -459,107 +421,7 @@ setup root = void $ do
           Left e   -> popError e
 
       handleMMTE :: UpdateMergeTrie UI -> UI ()
-      handleMMTE msg = handleErr $ do
-        liftIO $ putStrLn $ "handle MMTE msg"
-        liftIO $ putStrLn $ show msg
-        mcommit <- handleMMTE' msg
-
-        emt <- case mcommit of
-          Nothing -> do
-            -- redraw commit editor
-            bs <- liftIO $ atomically $ readTVar branchState
-            lift $ redrawSidebar bs Nothing
-
-            commit <-  liftIO $ atomically $ snd <$> getCurrentBranch
-            snap' <- updateSnapshotIndexLMMT blobStore commitSnapshotIndex commit
-            (HC (Tagged _ snap)) <- lift $ fetchLMMT snap'
-            let ft = unmodifiedWIP $ extractFT snap
-            mt <- lift $ buildMergeTrie def ft
-            pure $ Right mt -- no merge errors to render, if no in progress commit
-
-          Just ipc@InProgressCommit{..} -> do
-            -- redraw commit editor
-            bs <- liftIO $ atomically $ readTVar branchState
-            lift $ redrawSidebar bs $ Just ipc
-
-            let changes = uncurry Change <$> Map.toList ipcChanges
-
-            mt <- fmap snd $ makeMT changes ipcParentCommits (iRead commitSnapshotIndex) (sRead blobStore)
-
-            case resolveMergeTrie' (modifiedWIP $ Commit "[wip placeholder]" changes ipcParentCommits) mt of
-              Left e  -> pure $ Left e
-              Right _ -> pure $ Right mt
-
-        lift $ redrawMergeTrie emt
-        pure ()
-
-      handleMMTE' :: UpdateMergeTrie UI -> ExceptT (NonEmpty MergeError) UI (Maybe (InProgressCommit UI))
-      handleMMTE' (RemoveChange path) = liftIO $ atomically $ do
-          c <- readTVar inProgressCommitTVar
-          nextCommit <- case c of
-                (Just ipc) -> pure $ Just $ ipc { ipcChanges = Map.delete path (ipcChanges ipc) }
-                Nothing -> pure Nothing
-          writeTVar inProgressCommitTVar nextCommit
-          pure nextCommit
-
-      handleMMTE' (ApplyChange path ct) = liftIO $ atomically $ do
-          c <- readTVar inProgressCommitTVar
-          nextCommit <- case c of
-                (Just ipc) -> pure $ Just $ ipc { ipcChanges = Map.insert path ct (ipcChanges ipc) }
-                Nothing ->    do
-                  commit <- snd <$> getCurrentBranch
-                  pure $ Just $ InProgressCommit { ipcChanges = Map.singleton path ct
-                                                 , ipcParentCommits = unmodifiedWIP commit :| []
-                                                 }
-          writeTVar inProgressCommitTVar nextCommit
-          pure nextCommit
-
-      handleMMTE' (AddParent parentToAdd) = liftIO $ atomically $ do
-          c <- readTVar inProgressCommitTVar
-          nextCommit <- case c of
-                (Just ipc) -> pure $ Just $ ipc { ipcParentCommits = unmodifiedWIP parentToAdd <| ipcParentCommits ipc }
-                Nothing -> do
-                  commit <- snd <$> getCurrentBranch
-                  pure $ Just $ InProgressCommit { ipcChanges = Map.empty
-                                                 , ipcParentCommits = fmap unmodifiedWIP $ parentToAdd :| [commit]
-                                                 }
-          writeTVar inProgressCommitTVar nextCommit
-          pure nextCommit
-
-      handleMMTE' Reset = liftIO $ atomically $ do
-          let nextCommit = Nothing
-          writeTVar inProgressCommitTVar nextCommit
-          pure nextCommit
-
-      handleMMTE' (Finalize msg) = do
-          -- FIXME: interleaving STM and IO actions here, b/c need to upload commit. janky?
-          mipc <- liftIO $ atomically $ do
-            readTVar inProgressCommitTVar
-          case mipc of
-            Nothing  -> pure Nothing -- no-op, nothing to finalize
-            Just InProgressCommit{..} -> do
-              let changes = uncurry Change <$> Map.toList ipcChanges
-                  commit = modifiedWIP $ Commit msg changes ipcParentCommits
-
-              uploadedCommit <- lift $ uploadWIPT (sWrite blobStore) commit
-
-
-              -- update snapshot index. will error out if this commit is invalid, preventing it from causing tvar updates
-              _ <- updateSnapshotIndexLMMT blobStore commitSnapshotIndex uploadedCommit
-
-              let mipc' = Nothing
-
-              bs <- liftIO $ atomically $ do
-                -- assertion: IPC and current branch are always intertwined, so this is safe
-                updateCurrentBranch uploadedCommit
-                writeTVar inProgressCommitTVar mipc'
-                bs <- readTVar branchState
-                pure bs
-
-              lift $ redrawSidebar bs mipc'
-
-              pure Nothing
-
+      handleMMTE msg = handleErr $ pure ()
 
 
   -- discarded return value deregisters handler
@@ -583,31 +445,6 @@ setup root = void $ do
 
   _ <- onEvent updateBranchStateEvent $ \ubs -> do
     bs' <- case ubs of
-      ForkFrom f s -> do
-        liftIO $ putStrLn "fork from"
-        liftIO $ atomically $ do
-          bs <- readTVar branchState
-          commit <- case f of
-            MainBranch -> pure $ bsMainBranch bs
-            OtherBranch b -> pure $ maybe (error "todo") id $ lookup b (bsBranches bs)
-
-          -- TODO: spawn popup requesting branch name, prepop'd with name of branch being forked from
-
-          let bs' = bs { bsBranches = bsBranches bs ++ [(s, commit)] }
-          writeTVar branchState bs'
-          pure bs'
-      DelBranch s -> do
-        liftIO $ putStrLn "del branch: todo"
-        liftIO $ atomically $ do
-          bs <- readTVar branchState
-
-          let bs' = bs
-                  { bsBranches = filter ((/= s) . fst) $ bsBranches bs
-                  , bsFocus = if bsFocus bs == OtherBranch s then MainBranch else bsFocus bs
-                  }
-
-          writeTVar branchState bs'
-          pure bs'
       ChangeFocus f -> do
         liftIO $ putStrLn "changefocus"
         liftIO $ atomically $ do
@@ -617,14 +454,14 @@ setup root = void $ do
           let bs' = bs { bsFocus = f }
           writeTVar branchState bs'
           pure bs'
+      _ -> error "only changing focus now supported"
 
     -- dispatch reset after change focus - will redraw merge trie & reset + redraw commit editor
     case ubs of
       _ -> -- FIXME: just run in all cases b/c that'll trigger redraw of commit editor - could optimize more here
         liftIO $ modifyMergeTrieHandler Reset
 
-    mipc <- liftIO $ atomically $ readTVar inProgressCommitTVar
-    redrawSidebar bs' mipc
+    redrawSidebar bs' Nothing
     pure ()
 
   bs <- liftIO $ atomically $ readTVar branchState

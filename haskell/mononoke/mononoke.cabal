@@ -36,7 +36,9 @@ library
       Merkle.Generic.BlakeHash
       Merkle.Generic.HRecursionSchemes
   other-modules:
+      Merkle.Bonsai.MergeTrie.Index
       Merkle.Bonsai.MergeTrie.Render
+      Merkle.Bonsai.MergeTrie.Types
       Merkle.Bonsai.Types.Examples
       Merkle.Bonsai.Types.Render
       Merkle.Bonsai.Types.Tags
