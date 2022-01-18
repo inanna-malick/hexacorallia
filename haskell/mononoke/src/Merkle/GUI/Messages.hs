@@ -3,13 +3,11 @@
 module Merkle.GUI.Messages
   ( module Merkle.GUI.Messages
   , SpawnPopup(..)
-  , UpdateMergeTrie(..)
   ) where
 
 --------------------------------------------
 import           Merkle.GUI.Core
 import           Merkle.GUI.Modal
-import           Merkle.GUI.WorkingMergeTrie
 --------------------------------------------
 
 

@@ -34,7 +34,6 @@ import           Merkle.GUI.Core
 import           Merkle.GUI.Elements
 import           Merkle.GUI.State
 import qualified Merkle.GUI.Modal as Modal
-import qualified Merkle.GUI.WorkingMergeTrie as WorkingMergeTrie
 import           Merkle.GUI.Messages
 import           Merkle.Generic.BlakeHash
 import           Merkle.Generic.HRecursionSchemes
@@ -110,37 +109,12 @@ appendNEL xs x = maybe (pure x) (<> pure x) $ nonEmpty xs
 drawCommitEditor
   :: BranchState UI
   -> Handler (SpawnPopup UI)
-  -> Handler (UpdateMergeTrie UI)
+  -> Handler ()
   -> Handler (FocusWIPT UI)
   -> Maybe (InProgressCommit UI)
   -> UI Element
-drawCommitEditor bs popRequest modifyMergeTrieHandler focusHandler ipc = do
-
-  viewCommit <- case ipc of
-    Nothing -> string "no in progress commit"
-    _ -> error "TODO remove"
-
-  UI.div #+ [ element viewCommit
-            , UI.br
-            , string "branches:"
-            ]
-
-  where
-
-    renderChange :: NonEmpty Path -> ChangeType (WIPT UI) -> UI Element
-    renderChange p (Add wipt) =
-      faLiSimple ["add"] "fa-plus-circle" (removeChange p) (string $ "Add: " ++ renderPath p) $ faUl #+ [renderWIPTBlob focusHandler [] wipt]
-    renderChange p Del =
-      faLiSimple ["del"] "fa-minus-circle" (removeChange p) (string $ "Del: " ++ renderPath p) UI.div
-
-    removeChange nel = [("fa-trash-alt", liftIO $ modifyMergeTrieHandler $ RemoveChange nel)]
-
-
-
-    viewChanges cs = do
-      faUl #+ (uncurry renderChange <$> (Map.toList cs))
-
-    renderPath = mconcat . intersperse "/" . toList
+drawCommitEditor bs popRequest modifyMergeTrieHandler focusHandler ipc
+  = UI.div # withClass ["placeholder"]
 
 
 
@@ -385,8 +359,7 @@ setup root = void $ do
           Right () -> pure ()
           Left e   -> popError e
 
-      handleMMTE :: UpdateMergeTrie UI -> UI ()
-      handleMMTE msg = handleErr $ pure ()
+      handleMMTE _ = handleErr $ pure ()
 
 
   -- discarded return value deregisters handler
@@ -394,9 +367,6 @@ setup root = void $ do
 
   -- discarded return value deregisters handler
   _ <- onEvent modifyMergeTrieEvent handleMMTE
-
-  -- TODO: only reset on DelBranch if focus changed (current branch deleted == auto-reset)
-  liftIO $ modifyMergeTrieHandler $ Reset
 
   browserRoot <- faUl
   -- discarded return value deregisters handler
@@ -421,10 +391,6 @@ setup root = void $ do
           pure bs'
       _ -> error "only changing focus now supported"
 
-    -- dispatch reset after change focus - will redraw merge trie & reset + redraw commit editor
-    case ubs of
-      _ -> -- FIXME: just run in all cases b/c that'll trigger redraw of commit editor - could optimize more here
-        liftIO $ modifyMergeTrieHandler Reset
 
     redrawSidebar bs' Nothing
     pure ()
