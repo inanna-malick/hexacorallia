@@ -120,8 +120,7 @@ drawCommitEditor bs popRequest modifyMergeTrieHandler focusHandler ipc = do
     Nothing -> string "no in progress commit"
     _ -> error "TODO remove"
 
-  UI.div #+ [ addChanges
-            , element viewCommit
+  UI.div #+ [ element viewCommit
             , UI.br
             , string "branches:"
             ]
@@ -143,28 +142,6 @@ drawCommitEditor bs popRequest modifyMergeTrieHandler focusHandler ipc = do
 
     renderPath = mconcat . intersperse "/" . toList
 
-
-    addChanges = do
-      addButton <- UI.button # set text "add"
-      delButton <- UI.button # set text "del"
-
-      pathInput     <- UI.input
-
-      on UI.click delButton $ \() -> void $ runMaybeT $ do
-        path <- lift (UI.get UI.value pathInput) >>= MaybeT . pure . parsePath
-        liftIO $ modifyMergeTrieHandler (ApplyChange path Del)
-
-      on UI.click addButton $ \() -> void $ runMaybeT $ do
-        path <- lift (UI.get UI.value pathInput) >>= MaybeT . pure . parsePath
-        liftIO $ popRequest $ SpawnRequestText "file contents" $ \s -> liftIO $ do
-          modifyMergeTrieHandler (ApplyChange path $ Add $ modifiedWIP $ Blob s)
-
-      UI.div #+ [ string "path:"
-                , element pathInput
-                , UI.br
-                , element delButton
-                , element addButton
-                ]
 
 
 parsePath :: String -> Maybe (NonEmpty Path)
@@ -374,7 +351,6 @@ setup root = void $ do
 
 
   -- empty root nodes for various UI elements
-  mergeTrieRoot <- infraDiv
   sidebarRoot <- infraDiv # withClass ["sidebar"]
   modalRoot <- UI.div -- not infra because often invisible, infra controls display
 
@@ -402,17 +378,6 @@ setup root = void $ do
         element sidebarRoot #+ [ drawCommitEditor bs popupHandler modifyMergeTrieHandler focusChangeHandler mipc
                                , branchBrowser commitSnapshotIndex blobStore popupHandler bs focusChangeHandler updateBranchStateHandler
                                ]
-
-  let redrawMergeTrie mt = void $ do
-        ipcOrC <- liftIO $ atomically $ do
-          mipc <- readTVar inProgressCommitTVar
-          case mipc of
-            Just ipc -> pure $ Left ipc
-            Nothing ->  do
-              Right . snd <$> getCurrentBranch
-
-        _ <- element mergeTrieRoot # set children []
-        element mergeTrieRoot #+ [WorkingMergeTrie.browseMergeTrie modifyMergeTrieHandler focusChangeHandler minimizations ipcOrC mt]
 
   let handleErr m = do
         x <- runExceptT m
@@ -470,7 +435,6 @@ setup root = void $ do
 
   void $ flex_p (getBody root)
                 [ (element sidebarRoot, flexGrow 1)
-                , (element mergeTrieRoot, flexGrow 2)
                 , ( infraDiv #+ [element browserRoot]
                   , flexGrow 2
                   )
