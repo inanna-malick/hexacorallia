@@ -110,8 +110,6 @@ data M a i where
     :: a 'FileTree    -- snapshot of file tree in commit
     -> a 'CommitT     -- originating commit
     -> [a 'SnapshotT] -- parent snapshots, if any
-    -- NOTE: ^^ added this to make algorithm for snapshot gen prettier
-    -- NOTE: ^^ valid choice according to rain but bad motivation? idk
     -> M a 'SnapshotT
 
   -- file tree entries:
@@ -122,9 +120,6 @@ data M a i where
   Dir
     --  TODO: will need canonical on-disk map repr/cannonical hash
     :: Map Path (a 'FileTree) -- children
- -- Q: do I store this here, too, or do I only store it for files?
- --   -> a 'CommitT -- last modified in this commit
- --   -> a 'FileTree -- previous incarnation
     -> M a 'FileTree
 
   -- commits:
@@ -451,3 +446,8 @@ mkDagStore
      )
   => DAG.GrpcClient -> Store m
 mkDagStore = DAG.mkDagStore
+
+
+type Lazy m = M.Lazy m M
+type Local = M.Local M
+type PartialUpdate m = M.PartialUpdate m M

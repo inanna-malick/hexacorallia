@@ -39,6 +39,7 @@ dependencies:
   - cryptonite
   - bytestring
   - data-fix
+  - data-default
   - directory
   - deriving-compat
   - free

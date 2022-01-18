@@ -12,6 +12,7 @@ import           Control.Monad (void)
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Except
 import           Control.Monad.Trans.Maybe
+import           Data.Default
 import           Data.List (intersperse)
 import           Data.List.NonEmpty (toList, nonEmpty, (<|), NonEmpty(..))
 import           Data.List.Split (splitOn)
@@ -38,8 +39,6 @@ import           Merkle.GUI.Messages
 import           Merkle.Generic.BlakeHash
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
-
-
 
 type Minimizations = Set RawBlakeHash
 
@@ -475,7 +474,7 @@ setup root = void $ do
             snap' <- updateSnapshotIndexLMMT blobStore commitSnapshotIndex commit
             (HC (Tagged _ snap)) <- lift $ fetchLMMT snap'
             let ft = unmodifiedWIP $ extractFT snap
-            mt <- lift $ buildMergeTrie emptyMergeTrie ft
+            mt <- lift $ buildMergeTrie def ft
             pure $ Right mt -- no merge errors to render, if no in progress commit
 
           Just ipc@InProgressCommit{..} -> do

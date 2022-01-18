@@ -82,6 +82,7 @@ library
     , clay
     , containers
     , cryptonite
+    , data-default
     , data-fix
     , deriving-compat
     , directory
@@ -146,6 +147,7 @@ executable mononoke
     , clay
     , containers
     , cryptonite
+    , data-default
     , data-fix
     , deriving-compat
     , directory
@@ -216,6 +218,7 @@ test-suite spec
     , clay
     , containers
     , cryptonite
+    , data-default
     , data-fix
     , deriving-compat
     , directory

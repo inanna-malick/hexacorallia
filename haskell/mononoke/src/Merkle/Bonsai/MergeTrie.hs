@@ -14,6 +14,7 @@ module Merkle.Bonsai.MergeTrie where
 import           Control.Concurrent.STM
 import           Control.Monad.Trans
 import           Control.Monad.Except
+import           Data.Default
 import qualified Data.Foldable as Foldable
 import           Data.Functor.Compose
 import qualified Data.Functor.Foldable as FF
@@ -52,19 +53,6 @@ data MergeTrie m a
   , mtChange  :: Maybe (ChangeType (WIPT m)) -- only one change per path is valid (only LMMT-only field)
   }
   deriving (Functor, Foldable, Traversable)
-
--- NOTE/FIXME: this needs to operate on git-style trees - can I parameterize the whole trie infra over the underlying file type (eg Mononoke FT w/ commit pointers vs git-style)
--- | represents assertions from N parent snapshots and child snapshot
---   used to generate change lists from git-style trees
--- data MergeTrie m a
---   = MergeTrie
---   { -- | Trie layer containing all assertions from snapshots
---     mtSnapshotTrie :: SnapshotTrie m a
---     -- | all changes at this path
---   , mtChange  :: Maybe (ChangeType (WIPT m)) -- only one change per path is valid (only LMMT-only field)
---   }
---   deriving (Functor, Foldable, Traversable)
-
 
 
 mtChildren
@@ -251,7 +239,7 @@ makeSnapshot
 makeSnapshot commit index storeRead = do
     (snapshots, mt') <- case commit of
         Commit _msg changes parents -> makeMT changes parents index storeRead
-        NullCommit -> pure ([], emptyMergeTrie)
+        NullCommit -> pure ([], def)
 
     -- liftIO $ do
     --   print "mergetrie:"
@@ -288,7 +276,7 @@ makeMT changes parents index storeRead = do
       --   traverse (\s -> putStr "  " >> putStrLn s) lines
 
       let flip2 = (flip .) . flip
-          e = pure ([], emptyMergeTrie)
+          e = pure ([], def)
       (snapshots, mt) <- flip2 foldl e parents $ \mstate parentCommit -> do
         (snapshots, mt) <- mstate
         lift (index (hashOfWIPT parentCommit)) >>= \case
@@ -339,7 +327,7 @@ buildMergeTrie original = para f original
                               pure $ Left ft'
                             else do
                               -- not an elegant solution, but should be valid (FIXME/TODO: ???, revisit)
-                              mt1 <- buildMergeTrie emptyMergeTrie ft
+                              mt1 <- buildMergeTrie def ft
                               mt2 <- buildMergeTrie mt1 ft'
                               pure $ Right mt2
 
@@ -369,17 +357,16 @@ buildMergeTrie original = para f original
                           }
                   pure $ Fix mt'
 
--- empty mergetrie
-emptyMergeTrie :: Fix (MergeTrie m)
-emptyMergeTrie = Fix
-               $ MergeTrie
-               { mtChange = Nothing
-               , mtSnapshotTrie = SnapshotTrie
-                               { stChildren = Map.empty
-                               , stFilesAtPath = Map.empty
-                               }
-               }
 
+instance Default (Fix (MergeTrie m)) where
+  def = Fix
+      $ MergeTrie
+      { mtChange = Nothing
+      , mtSnapshotTrie = SnapshotTrie
+                      { stChildren = Map.empty
+                      , stFilesAtPath = Map.empty
+                      }
+      }
 
 
 data ApplyChangeError
