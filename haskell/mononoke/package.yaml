@@ -28,6 +28,8 @@ default-extensions:
   - TypeApplications
   - TypeOperators
   - OverloadedLabels
+  - MultiParamTypeClasses
+  - UndecidableInstances
 
 dependencies:
   - base >=4.8

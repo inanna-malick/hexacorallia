@@ -28,6 +28,9 @@ import           Data.Map.Merge.Strict
 import           Merkle.Bonsai.Types
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
+import Optics hiding (Index)
+import Optics.TH
+
 
 -- | represents assertions from N snapshots
 data SnapshotTrie m a
@@ -55,15 +58,19 @@ data MergeTrie m a
   deriving (Functor, Foldable, Traversable)
 
 
+makeFieldLabelsFor [("stFilesAtPath", "filesAtPath"), ("stChildren", "children")] ''SnapshotTrie
+makeFieldLabelsFor [("mtSnapshotTrie", "snapshotTrie"), ("mtChange", "change")] ''MergeTrie
+
+
 mtChildren
   :: MergeTrie m a
   -> Map Path ((WIPT m 'FileTree) `Either` a)
-mtChildren = stChildren . mtSnapshotTrie
+mtChildren = view (#snapshotTrie % #children)
 
 mtFilesAtPath
   :: MergeTrie m a
   -> Map (Hash 'FileTree) (WIPT m 'FileTree, SnapshotFile (WIPT m))
-mtFilesAtPath = stFilesAtPath . mtSnapshotTrie
+mtFilesAtPath = view (#snapshotTrie % #filesAtPath)
 
 -- will add cases to enum
 data MergeErrorAtPath
@@ -337,36 +344,35 @@ buildMergeTrie original = para f original
                   mtChildren'
                     <- mergeA wiptOnly mtOnly presentInBoth children (mtChildren mt)
 
-                  let mt' = MergeTrie
-                          { mtChange = mtChange mt
-                          , mtSnapshotTrie = SnapshotTrie
-                                           { stChildren = mtChildren'
-                                           , stFilesAtPath = mtFilesAtPath mt
-                                           }
-                          }
+                  let mt' = def & #change .~ mtChange mt
+                                & #snapshotTrie % #children .~ mtChildren'
+                                & #snapshotTrie % #filesAtPath .~ mtFilesAtPath mt
 
                   pure $ Fix mt'
                 File sf -> do
                   let filesAtPath = Map.insert (hashOfWIPT wipt) (wipt, sf) (mtFilesAtPath mt)
-                      mt' = MergeTrie
-                          { mtChange = mtChange mt
-                          , mtSnapshotTrie = SnapshotTrie
-                                           { stChildren    = fmap fst <$> mtChildren mt
-                                           , stFilesAtPath = filesAtPath
-                                           }
-                          }
+
+                  let children' = fmap fst <$> mtChildren mt
+                      mt' = def & #change .~ mtChange mt
+                                & #snapshotTrie % #children .~ children'
+                                & #snapshotTrie % #filesAtPath .~ filesAtPath
+
                   pure $ Fix mt'
 
 
+
 instance Default (Fix (MergeTrie m)) where
-  def = Fix
-      $ MergeTrie
+  def = Fix def
+
+instance Default (MergeTrie m x) where
+  def = MergeTrie
       { mtChange = Nothing
       , mtSnapshotTrie = SnapshotTrie
                       { stChildren = Map.empty
                       , stFilesAtPath = Map.empty
                       }
       }
+
 
 
 data ApplyChangeError
@@ -405,47 +411,34 @@ applyChange t c = para f t . toList $ _path c
                   Just (Left lmmt) -> lift $ applyChangeH lmmt paths $ _change c
                   Just (Right (_,next)) -> next paths
                   Nothing -> pure $ constructMT (_change c) paths
-          pure $ Fix
-               $ MergeTrie
-               { mtChange = mtChange m
-               , mtSnapshotTrie = SnapshotTrie
-                               { stChildren = Map.insert path (Right mt')
-                                            $ fmap fst <$> mtChildren m
 
-                               , stFilesAtPath = mtFilesAtPath m
-                               }
-               }
+
+          let children' = Map.insert path (Right mt') $ fmap fst <$> mtChildren m
+
+          pure $ Fix
+               $ def & #change .~ mtChange m
+                     & #snapshotTrie % #children .~ children'
+                     & #snapshotTrie % #filesAtPath .~ mtFilesAtPath m
+
         f m [] = do
           change' <- case mtChange m of
             Nothing -> pure $ Just $ _change c
             Just _  -> ExceptT $ pure $ Left $ ChangeAlreadyExistsAtPath
+
+          let children' = fmap fst <$> mtChildren m
+
           pure . Fix
-               $ MergeTrie
-               { mtChange = change'
-               , mtSnapshotTrie = SnapshotTrie
-                               { stChildren = fmap fst <$> mtChildren m
-                               , stFilesAtPath = mtFilesAtPath m
-                               }
-               }
+               $ def & #change .~ change'
+                     & #snapshotTrie % #children .~ children'
+                     & #snapshotTrie % #filesAtPath .~ mtFilesAtPath m
+
 
 -- | helper function, constructs merge trie with change at path
 constructMT :: forall m. ChangeType (WIPT m) -> [Path] -> Fix (MergeTrie m)
 constructMT change = FF.ana f
   where f :: [Path] -> MergeTrie m [Path]
-        f []     = MergeTrie
-                 { mtChange = Just change
-                 , mtSnapshotTrie = SnapshotTrie
-                                  { stChildren = Map.empty
-                                  , stFilesAtPath = Map.empty
-                                  }
-                 }
-        f (x:xs) = MergeTrie
-                 { mtChange = Nothing
-                 , mtSnapshotTrie = SnapshotTrie
-                                  { stChildren = Map.singleton x (Right xs)
-                                  , stFilesAtPath = Map.empty
-                                  }
-                 }
+        f []     = def & #change .~ Just change
+        f (x:xs) = def & #snapshotTrie % #children .~ Map.singleton x (Right xs)
 
 
 -- | results in 'm' because it may need to expand the provided tree (which could just be a hash)
@@ -463,13 +456,8 @@ applyChangeH wipt fullPath ct = do
       [] -> do
         -- port over dir structure
         let children' = fmap Left children
-            mt = MergeTrie
-               { mtChange = Just ct
-               , mtSnapshotTrie = SnapshotTrie
-                                { stChildren = children'
-                                , stFilesAtPath = Map.empty
-                                }
-               }
+            mt = def & #change .~ Just ct
+                     & #snapshotTrie % #children .~ children'
 
         pure $ Fix mt
 
@@ -480,35 +468,19 @@ applyChangeH wipt fullPath ct = do
             child <- applyChangeH c paths ct
             pure $ Map.insert path (Right child) $ fmap Left children
           Nothing -> pure $ Map.insert path (Right $ constructMT ct paths) $ fmap Left children
-        let mt = MergeTrie
-               { mtChange = Nothing
-               , mtSnapshotTrie = SnapshotTrie
-                                { stChildren = children'
-                                , stFilesAtPath = Map.empty
-                                }
-               }
+        let mt = def & #snapshotTrie % #children .~ children'
 
         pure $ Fix mt
 
     File sf -> case fullPath of
       [] -> do
         let files = Map.singleton (hashOfWIPT wipt) (wipt, sf)
-            mt = MergeTrie
-               { mtChange = Just ct
-               , mtSnapshotTrie = SnapshotTrie
-                                { stChildren = Map.empty
-                                , stFilesAtPath = files
-                                }
-               }
+            mt = def & #change .~ Just ct
+                     & #snapshotTrie % #filesAtPath .~ files
         pure $ Fix mt
       (path:paths) -> do
         let children = Map.singleton path . Right $ constructMT ct paths
             files = Map.singleton (hashOfWIPT wipt) (wipt, sf)
-            mt = MergeTrie
-               { mtChange = Nothing
-               , mtSnapshotTrie = SnapshotTrie
-                                { stChildren = children
-                                , stFilesAtPath = files
-                                }
-               }
+            mt = def & #snapshotTrie % #children .~ children
+                     & #snapshotTrie % #filesAtPath .~ files
         pure $ Fix mt

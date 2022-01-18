@@ -72,6 +72,8 @@ library
       TypeApplications
       TypeOperators
       OverloadedLabels
+      MultiParamTypeClasses
+      UndecidableInstances
   ghc-options: -Wall
   build-depends:
       aeson
@@ -137,6 +139,8 @@ executable mononoke
       TypeApplications
       TypeOperators
       OverloadedLabels
+      MultiParamTypeClasses
+      UndecidableInstances
   ghc-options: -Wall
   build-depends:
       aeson
@@ -204,6 +208,8 @@ test-suite spec
       TypeApplications
       TypeOperators
       OverloadedLabels
+      MultiParamTypeClasses
+      UndecidableInstances
   ghc-options: -Wall
   build-tool-depends:
       hspec-discover:hspec-discover
