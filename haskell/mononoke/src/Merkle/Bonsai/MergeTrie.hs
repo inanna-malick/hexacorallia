@@ -7,7 +7,17 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fwarn-incomplete-patterns #-}
 
-module Merkle.Bonsai.MergeTrie where
+module Merkle.Bonsai.MergeTrie
+  ( module Merkle.Bonsai.MergeTrie
+  , MergeTrie(..)
+  , ErrorAnnotatedMergeTrie
+  , mtFilesAtPath
+  , mtChildren
+  , MergeError
+  , Index(..), IndexRead, IndexWrite
+  , stmIOIndex, nullIndex
+  )
+where
 
 
 --------------------------------------------
@@ -26,72 +36,13 @@ import qualified Data.Map.Strict as Map
 import           Data.Map.Merge.Strict
 --------------------------------------------
 import           Merkle.Bonsai.Types
+import           Merkle.Bonsai.MergeTrie.Types
+import           Merkle.Bonsai.MergeTrie.Index
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
 import Optics hiding (Index)
 import Optics.TH
 
-
--- | represents assertions from N snapshots
-data SnapshotTrie m a
-  = SnapshotTrie
-  { -- | all files at this path
-    --   using map to enforce only one entry per hash - good idea?
-    -- TODO: figure out why tuple - I think b/c the process needs both list of changes and snapshot style index? idk lol
-    stFilesAtPath :: Map (Hash 'FileTree)
-                         (WIPT m 'FileTree, SnapshotFile (WIPT m))
-  -- | a map of child entities, if any, each either a recursion
-  --   or a pointer to some uncontested extant file tree entity
-  , stChildren :: Map Path ((WIPT m 'FileTree) `Either` a)
-  }
-  deriving (Functor, Foldable, Traversable)
-
--- | represents assertions from N snapshots and a commit
---   used to resolve merges
-data MergeTrie m a
-  = MergeTrie
-  { -- | Trie layer containing all assertions from snapshots
-    mtSnapshotTrie :: SnapshotTrie m a
-    -- | all changes at this path
-  , mtChange  :: Maybe (ChangeType (WIPT m)) -- only one change per path is valid (only LMMT-only field)
-  }
-  deriving (Functor, Foldable, Traversable)
-
-
-makeFieldLabelsFor [("stFilesAtPath", "filesAtPath"), ("stChildren", "children")] ''SnapshotTrie
-makeFieldLabelsFor [("mtSnapshotTrie", "snapshotTrie"), ("mtChange", "change")] ''MergeTrie
-
-
-mtChildren
-  :: MergeTrie m a
-  -> Map Path ((WIPT m 'FileTree) `Either` a)
-mtChildren = view (#snapshotTrie % #children)
-
-mtFilesAtPath
-  :: MergeTrie m a
-  -> Map (Hash 'FileTree) (WIPT m 'FileTree, SnapshotFile (WIPT m))
-mtFilesAtPath = view (#snapshotTrie % #filesAtPath)
-
--- will add cases to enum
-data MergeErrorAtPath
-  = MoreThanOneFileButNoChange
-  | DeleteAtNodeWithNoFile
-  | AddChangeAtNodeWithChildren
-  | OneOrMoreFilesButWithChildren
-  deriving (Show)
-
-data MergeError
-  = ErrorAtPath [Path] MergeErrorAtPath
-  | InvalidChange ApplyChangeError
-  deriving (Show)
-
--- single layer of error annotated merge trie
-type ErrorAnnotatedMergeTrie m = Either (Fix (MergeTrie m)) -- potentially a subtrie with no errors
-                       `Compose` (,) (Maybe MergeErrorAtPath) -- each node potentially error tagged
-                       `Compose` MergeTrie m -- the actual merge trie structure
-
--- TODO move to some utils module
-type RAlgebra f a = f (Fix f, a) -> a
 
 
 -- can then use other function to add commit to get snapshot
@@ -100,9 +51,9 @@ resolveMergeTrie
    . WIPT m 'CommitT
   -> Fix (MergeTrie m)
   -> (NonEmpty MergeError) `Either` WIPT m 'FileTree
-resolveMergeTrie c mt = either (\e -> Left $ convertErrs $ cata f e []) Right x
+resolveMergeTrie wiptCommit mt = either (\e -> Left $ convertErrs $ cata f e []) Right x
   where
-    x = resolveMergeTrie' c mt
+    x = resolveMergeTrie' wiptCommit mt
     convertErrs :: [MergeError] -> (NonEmpty MergeError)
     convertErrs errs = case nonEmpty errs of
       Just xs -> xs
@@ -198,41 +149,6 @@ resolveMergeTrie' commit root = do
           let children' = Map.fromList children
             in pure $ Just $ modifiedWIP $ Dir children'
 
-type IndexRead m  = Hash 'CommitT -> m (Maybe (Hash 'SnapshotT))
-type IndexWrite m = Hash 'CommitT -> Hash 'SnapshotT -> m ()
-
-data Index m
-  = Index
-  { iRead  :: IndexRead m
-  , iWrite :: IndexWrite m
-  }
-
-stmIOIndex :: MonadIO m => TVar (Map (Hash 'CommitT) (Hash 'SnapshotT)) -> Index m
-stmIOIndex tvar
-  = let index' = stmIndex tvar
-     in Index
-  { iRead = \h    -> liftIO $ atomically $ iRead index' h
-  , iWrite = \c s -> liftIO $ atomically $ iWrite index' c s
-  }
-
-
-stmIndex :: TVar (Map (Hash 'CommitT) (Hash 'SnapshotT)) -> Index STM
-stmIndex tvar
-  = Index
-  { iRead = \c -> do
-      bs <- readTVar tvar
-      pure $ Map.lookup c bs
-  , iWrite = \c s -> do
-      modifyTVar tvar $ \m ->
-        Map.insert c s m
-      pure ()
-  }
-
-
-
-
-nullIndex :: Applicative m => Index m
-nullIndex = Index { iRead = \_ -> pure Nothing, iWrite = \_ _ -> pure () }
 
 -- | build a snapshot for a commit, recursively descending
 --   into parent commits to build snapshots if neccessary
@@ -361,24 +277,6 @@ buildMergeTrie original = para f original
 
 
 
-instance Default (Fix (MergeTrie m)) where
-  def = Fix def
-
-instance Default (MergeTrie m x) where
-  def = MergeTrie
-      { mtChange = Nothing
-      , mtSnapshotTrie = SnapshotTrie
-                      { stChildren = Map.empty
-                      , stFilesAtPath = Map.empty
-                      }
-      }
-
-
-
-data ApplyChangeError
-  = ChangeAlreadyExistsAtPath
-  deriving (Show)
-
 -- TODO: output error-annotated list of commits? eh, maybe later, not a priority
 applyChanges
   :: forall m
@@ -432,13 +330,6 @@ applyChange t c = para f t . toList $ _path c
                      & #snapshotTrie % #children .~ children'
                      & #snapshotTrie % #filesAtPath .~ mtFilesAtPath m
 
-
--- | helper function, constructs merge trie with change at path
-constructMT :: forall m. ChangeType (WIPT m) -> [Path] -> Fix (MergeTrie m)
-constructMT change = FF.ana f
-  where f :: [Path] -> MergeTrie m [Path]
-        f []     = def & #change .~ Just change
-        f (x:xs) = def & #snapshotTrie % #children .~ Map.singleton x (Right xs)
 
 
 -- | results in 'm' because it may need to expand the provided tree (which could just be a hash)
