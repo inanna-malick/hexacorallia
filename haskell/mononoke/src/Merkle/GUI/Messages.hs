@@ -16,8 +16,6 @@ data BrowserNavigation m
 
 
 data UpdateBranchState
-  = ForkFrom BranchFocus String  -- branch off of current focus
-  | DelBranch String
-  | ChangeFocus BranchFocus -- blocked if IPC is Just
+  = ChangeFocus BranchFocus -- blocked if IPC is Just
 
 

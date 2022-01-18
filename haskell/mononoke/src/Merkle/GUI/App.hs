@@ -64,21 +64,15 @@ branchBrowser commitSnapshotIndex store popRequest bs focusChangeHandler updateB
             Left e ->     string $ "unable to construct snapshot: " ++ show e
 
       let extraTags = if f == bsFocus bs then ["focus", "branch"] else ["branch"]
-          forkAction focus = do
-            liftIO $ popRequest $ SpawnRequestText "branch name" $ \newBranchName ->
-              liftIO $ updateBranchStateHandler $ ForkFrom focus newBranchName
       let extraActions = if f == bsFocus bs
-            then [("fa-code-branch", forkAction f)]
-            else [("fa-code-branch", forkAction f), ("fa-search", liftIO $ updateBranchStateHandler $ ChangeFocus f)]
+            then []
+            else [("fa-search", liftIO $ updateBranchStateHandler $ ChangeFocus f)]
 
       case f of
         MainBranch    -> do
           faLiSimple extraTags "fa-code-branch" extraActions (string "main branch") $ faUl #+ [commit', snap']
         OtherBranch branchName -> do
-          let delAction = liftIO $ do
-                putStrLn $ "delete branch w/ name " ++ branchName
-                updateBranchStateHandler $ DelBranch branchName
-          faLiSimple extraTags "fa-code-branch" ([("fa-trash-alt", delAction)] ++ extraActions)
+          faLiSimple extraTags "fa-code-branch" extraActions
                                          (string branchName) $ faUl #+ [commit', snap']
 
 
