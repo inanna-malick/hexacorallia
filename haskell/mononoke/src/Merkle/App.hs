@@ -22,16 +22,50 @@ import GHC.Generics
 
 import           Merkle.GUI.App (mononokeGUI)
 import Optics
+import Options.Applicative
+import Data.Semigroup ((<>))
+
+data CommandContext
+  = CommandContext
+  { ctxPort :: Port
+  , ctxAddr :: Addr
+  }
+
+appCommand :: Parser (CommandContext, Command)
+appCommand = (,) <$> ctx <*> cmd
+  where
+    ctx = CommandContext
+      <$> option auto
+          ( long "port"
+         <> metavar "Port"
+         <> showDefault
+         <> value 8083
+         <> help "DAG store port" )
+      <*> strOption
+          ( long "addr"
+         <> metavar "Addr"
+         <> showDefault
+         <> value "localhost"
+         <> help "DAG store address" )
+
+    cmd = subparser
+      ( command "diff" (info (pure ShowUncommitedChanges) ( progDesc "show uncommited changes"))
+     <> command "commit" (info undefined ( progDesc "commit changes" ))
+     <> command "create_branch" (info undefined ( progDesc "create a new branch"))
+     <> command "delete_branch" (info undefined ( progDesc "delete an existing branch"))
+     <> command "checkout" (info undefined
+                             ( progDesc "checkout an existing branch. fails if uncommited changes")
+                           )
+     <> command "init" (info undefined ( progDesc "init a new repo in current dir"))
+     <> command "gui" (info undefined ( progDesc "launch gui for repo" ))
+      )
+
 
 
 empty :: Applicative m => LMMT m 'FileTree
 empty = liftLMMT $ Term $ Dir M.empty
 
--- TODO 2
--- implement toml config file for dag app and for hexa
--- check below list, I think it's mb stale
 
--- commands to implement:
 
 -- diff: show extant changes (basically just commit dry run, super easy kinda )
 type Addr = String
@@ -40,8 +74,8 @@ type BranchName = String
 type Port = Integer
 -- all commands except for Init must be run in the root dir of an initialized repo
 data Command
-  = StartGUI Addr Port
-  | InitializeRepo Addr Port -- init repo in current dir
+  = StartGUI
+  | InitializeRepo -- init repo in current dir
   | CreateCommit Message [BranchName] -- commit all diffs in current dir, merging the provided branches if any
   | ShowUncommitedChanges -- show diffs in current dir
   | CreateBranch BranchName-- create a branch
@@ -54,37 +88,39 @@ executeCommand
    . ( MonadError String m
      , MonadIO m
      )
-  => Command
+  => CommandContext
+  -> Command
   -> m ()
-executeCommand (StartGUI addr port) = liftIO mononokeGUI -- addr pmort
-executeCommand (InitializeRepo addr port) = do
+executeCommand ctx StartGUI = liftIO mononokeGUI
+executeCommand ctx InitializeRepo = do
           currentDir <- liftIO getCurrentDirectory
-          initLocalState addr port (pure currentDir)-- TODO need current dir!
-executeCommand (CreateCommit msg merges) = do
+          initLocalState (ctxAddr ctx) (ctxPort ctx) (pure currentDir)
+executeCommand ctx (CreateCommit msg merges) = do
           currentDir <- liftIO getCurrentDirectory
           _changes <- commit (pure currentDir) msg
           pure ()
-executeCommand ShowUncommitedChanges = undefined
-executeCommand (CreateBranch branchName) = do
+executeCommand ctx ShowUncommitedChanges = undefined
+executeCommand ctx (CreateBranch branchName) = do
           currentDir <- pure <$> liftIO getCurrentDirectory
           state <- readLocalState currentDir
-          state' <- either throwError pure $ mkBranch branchName state
+          state' <- checkoutBranch branchName state
           writeLocalState currentDir state'
-executeCommand (DeleteBranch branchName) = do
+executeCommand ctx (DeleteBranch branchName) = do
           currentDir <- pure <$> liftIO getCurrentDirectory
           state <- readLocalState currentDir
           state' <- either throwError pure $ delBranch branchName state
           writeLocalState currentDir state'
-executeCommand (CheckoutBranch branchName) = undefined
+executeCommand ctx (CheckoutBranch branchName) = undefined
 
 -- TODO: fn that checks out a branch but only if there are no diffs
--- TODO: fun/spicy part is imposing 
 
 -- branch off current commit
-mkBranch :: String -> LocalState -> Either String LocalState
-mkBranch name ls = case M.member name (branches ls) of
-  False -> Right $ ls { branches = M.insert name (currentCommit ls) (branches ls) }
-  True  -> Left $ "mk branch that already exists " ++ name
+checkoutBranch :: MonadError String m => String -> LocalState -> m LocalState
+checkoutBranch name ls = do
+    currentCommit <- lsCurrentCommit ls
+    case M.member name (branches ls) of
+      False -> pure $ ls { branches = M.insert name currentCommit (branches ls) }
+      True  -> throwError $ "mk branch that already exists " ++ name
 
 -- delete existing branch
 delBranch :: String -> LocalState -> Either String LocalState
@@ -95,17 +131,24 @@ delBranch name ls = case M.member name (branches ls) of
 
 
 
--- can just require cmd line to be in root dir of repo, not in a subdir
+-- can just require cmd line invocation to be in root dir of repo, not in a subdir
 -- state store: local staged, as json, also presence of a file signifies that it's a mononoke root
+-- if this file is _not_ present for anything other than init, it's an error.
 data LocalState
   = LocalState
   { backingStoreAddr   :: String
   , backingStorePort   :: Integer
-  , currentCommit      :: Hash 'CommitT
-  , currentBranch      :: Maybe String
+  , currentBranch      :: String -- INVARIANT: must exist in branches map
   , snapshotMappings   :: M.Map (Hash 'CommitT) (Hash 'SnapshotT)
   , branches           :: M.Map String (Hash 'CommitT)
   } deriving (Ord, Eq, Show, Generic)
+
+lsCurrentCommit
+  :: MonadError String m
+  => LocalState
+  -> m (Hash 'CommitT)
+lsCurrentCommit ls = maybe (throwError "current branch does not exist in branches map") pure
+                 $ M.lookup (currentBranch ls) (branches ls)
 
 
 instance ToJSON LocalState where
@@ -142,9 +185,8 @@ initLocalState addr port path = do
                 { backingStoreAddr   = addr
                 , backingStorePort   = port
                 , snapshotMappings   = M.empty
-                , branches           = M.empty
-                , currentCommit      = emptyCommit
-                , currentBranch      = Just "main"
+                , branches           = M.singleton "main" emptyCommit
+                , currentBranch      = "main"
                 }
       writeLocalState path state
   pure ()
@@ -192,9 +234,10 @@ commit root commitMsg = do
   let clientConfig = mkGRPCClient (backingStoreAddr localState) (fromInteger $ backingStorePort localState)
   client <- mkClient clientConfig
   let store = mkDagStore client
-  snapshot <- case M.lookup (currentCommit localState) (snapshotMappings localState) of
+  currentCommit <- lsCurrentCommit localState
+  snapshot <- case M.lookup currentCommit (snapshotMappings localState) of
     Nothing -> do
-      lastCommit <- view #node $ unTerm $ lazyLoadHash store (currentCommit localState)
+      lastCommit <- view #node $ unTerm $ lazyLoadHash store currentCommit
       let lastCommit' :: M (WIPT m) 'CommitT
             = hfmap (unmodifiedWIP . toLMT) lastCommit
       snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)
@@ -209,12 +252,13 @@ commit root commitMsg = do
   wipCommit <- case diffs of
     [] -> throwError "attempted commit with no diffs"
     changes -> do
-      let parent = toLMT $ lazyLoadHash store (currentCommit localState)
+      let parent = toLMT $ lazyLoadHash store currentCommit
       let changes' = mapChange modifiedWIP' <$> changes
       pure $ modifiedWIP $ Commit commitMsg changes' (pure $ unmodifiedWIP parent)
   newCommitHash <- hashOfLMMT <$> uploadWIPT (sWrite store) wipCommit
 
-  let localState' = localState { currentCommit =  newCommitHash}
+  -- TODO: optics, modify via fn, lol
+  let localState' = localState { branches =  M.insert (currentBranch localState) newCommitHash $ branches localState}
   writeLocalState root localState'
 
   -- NOTE: doesn't establish snapshot for new commit - should do so to confirm validity LMAO TODO
@@ -284,7 +328,7 @@ diffLocalState root snapshot = processRoot snapshot
           isFile <- liftIO $ doesFileExist absolutePath
           case isFile of
             True -> do -- diff contents. potential optimization, hash local before blob fetch.
-              (HC (Tagged _ remoteBlob)) <- fetchLMMT $ toLMT $ sfBlob remoteContentsLMMT
+              remoteBlob <- (unTerm $ sfBlob remoteContentsLMMT) ^. #node
               let (Blob remoteContents) = remoteBlob
               localContents <- liftIO $ readFile absolutePath
               case localContents == remoteContents of
