@@ -48,16 +48,24 @@ appCommand = (,) <$> ctx <*> cmd
          <> value "localhost"
          <> help "DAG store address" )
 
+    branchName = argument str (metavar "BRANCH_NAME")
+
+    commitArgs = CreateCommit
+             <$> branchName
+             <*> many (argument str (metavar "MERGE..."))
+
+
+
     cmd = subparser
       ( command "diff" (info (pure ShowUncommitedChanges) ( progDesc "show uncommited changes"))
-     <> command "commit" (info undefined ( progDesc "commit changes" ))
-     <> command "create_branch" (info undefined ( progDesc "create a new branch"))
-     <> command "delete_branch" (info undefined ( progDesc "delete an existing branch"))
-     <> command "checkout" (info undefined
+     <> command "commit" (info commitArgs ( progDesc "commit changes" ))
+     <> command "create_branch" (info (CreateBranch <$> branchName) ( progDesc "create a new branch"))
+     <> command "delete_branch" (info (DeleteBranch <$> branchName) ( progDesc "delete an existing branch"))
+     <> command "checkout" (info (CheckoutBranch <$> branchName)
                              ( progDesc "checkout an existing branch. fails if uncommited changes")
                            )
-     <> command "init" (info undefined ( progDesc "init a new repo in current dir"))
-     <> command "gui" (info undefined ( progDesc "launch gui for repo" ))
+     <> command "init" (info (pure InitializeRepo) ( progDesc "init a new repo in current dir"))
+     <> command "gui" (info (pure StartGUI) ( progDesc "launch gui for repo" ))
       )
 
 
