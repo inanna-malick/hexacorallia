@@ -29,14 +29,3 @@ instance Show (BranchState m) where
     , "\n, focus: \n"
     , show bsFocus
     ]
-
-data InProgressCommit m
-  = InProgressCommit
-  { ipcChanges       :: Map (NonEmpty Path) (ChangeType (WIPT m))
-  , ipcParentCommits :: NonEmpty (WIPT m 'CommitT)
-  }
-
-asWIPTCommit :: String -> InProgressCommit m -> WIPT m 'CommitT
-asWIPTCommit msg InProgressCommit{..} = modifiedWIP $ Commit msg changes ipcParentCommits
-  where
-   changes = uncurry Change <$> Map.toList ipcChanges

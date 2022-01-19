@@ -79,8 +79,8 @@ faLi' mFocusAction onHoverButtons = faLiSimple [typeTagName $ sing @i] (typeTagF
 faLi
   :: forall (i :: MTag)
    . SingI i
-  => Handler (FocusWIPT UI)
-  -> WIPT UI i
+  => Handler (FocusLMMT UI)
+  -> LMMT UI i
   -> [(String, UI ())] -- onHover
   -> UI Element
   -> UI Element

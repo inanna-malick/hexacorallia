@@ -47,7 +47,7 @@ branchBrowser
   -> Store UI
   -> Handler (SpawnPopup UI)
   -> BranchState UI
-  -> Handler (FocusWIPT UI)
+  -> Handler (FocusLMMT UI)
   -> Handler UpdateBranchState
   -> UI Element
 branchBrowser commitSnapshotIndex store popRequest bs focusChangeHandler updateBranchStateHandler = do
@@ -58,9 +58,9 @@ branchBrowser commitSnapshotIndex store popRequest bs focusChangeHandler updateB
     drawBranch (f, commit) = do
       esnap <- runExceptT $ updateSnapshotIndexLMMT store commitSnapshotIndex commit
 
-      let commit' = faLi focusChangeHandler (unmodifiedWIP commit) [] (string "commit: ") UI.div
+      let commit' = faLi focusChangeHandler commit [] (string "commit: ") UI.div
           snap'   = case esnap of
-            Right snap -> faLi focusChangeHandler (unmodifiedWIP snap) [] (string "snap: ") UI.div
+            Right snap -> faLi focusChangeHandler snap [] (string "snap: ") UI.div
             Left e ->     string $ "unable to construct snapshot: " ++ show e
 
       let extraTags = if f == bsFocus bs then ["focus", "branch"] else ["branch"]
@@ -77,38 +77,12 @@ branchBrowser commitSnapshotIndex store popRequest bs focusChangeHandler updateB
 
 
 
-renderWIPTBlob :: Handler (FocusWIPT UI) -> [(String, UI ())] -> WIPT UI 'BlobT -> UI Element
-renderWIPTBlob focusHandler actions wipt = do
-  let extraTags = case wipt of
-        (Term (HC (L _))) -> ["persisted"]
-        (Term (HC (R _))) -> ["wip"]
-
-  (HC (Tagged _h blob)) <- fetchWIPT wipt
-  case blob of
-    Blob b -> do
-      body <- UI.div # withClass (extraTags ++ [typeTagName $ sing @'BlobT])
-                    #+ [string $ "\"" ++ b ++ "\""]
-      faLi focusHandler wipt actions (string "file blob")
-                                      (element body)
-
-
 
 
 -- construct a NEL from a list and an element,
 -- but with the element appended to the list instead of prepended
 appendNEL :: [a] -> a -> NonEmpty a
 appendNEL xs x = maybe (pure x) (<> pure x) $ nonEmpty xs
-
-
-drawCommitEditor
-  :: BranchState UI
-  -> Handler (SpawnPopup UI)
-  -> Handler ()
-  -> Handler (FocusWIPT UI)
-  -> Maybe (InProgressCommit UI)
-  -> UI Element
-drawCommitEditor bs popRequest modifyMergeTrieHandler focusHandler ipc
-  = UI.div # withClass ["placeholder"]
 
 
 
@@ -119,20 +93,8 @@ parsePath s = do
     Just xs -> Just xs
 
 
-browseWIPT
-  :: Handler (FocusWIPT UI)
-  -> TVar Minimizations
-  -> FocusWIPT UI
-  -> UI Element
-browseWIPT focusHandler minimizations focus = case focus of
-    SnapshotF root -> (getConst $ hpara (uiWIPAlg focusHandler minimizations) root)
-    FileTreeF root -> (getConst $ hpara (uiWIPAlg focusHandler minimizations) root)
-    CommitF   root -> (getConst $ hpara (uiWIPAlg focusHandler minimizations) root)
-    BlobF     root -> (getConst $ hpara (uiWIPAlg focusHandler minimizations) root)
-
-
 browseLMMT
-  :: Handler (FocusWIPT UI)
+  :: Handler (FocusLMMT UI)
   -> TVar Minimizations
   -> FocusLMMT UI
   -> UI Element
@@ -143,25 +105,13 @@ browseLMMT focusHandler minimizations focus = case focus of
     BlobF     root -> (getConst $ hpara (uiLMMAlg focusHandler minimizations) root)
 
 
-
-uiWIPAlg
-  :: Handler (FocusWIPT UI)
-  -> TVar Minimizations
-  -> RAlg (WIP UI) (Const (UI Element))
-uiWIPAlg focusHandler minimizations (HC (L lmmt)) = Const $ do
-      browseLMMT focusHandler minimizations (wrapFocus sing $ lmmt)
-uiWIPAlg focusHandler minimizations wipt@(HC (R m)) = Const $ do
-      let action = liftIO $ focusHandler $ wrapFocus sing $ Term $ hfmap _tag wipt
-      getConst $ browseMononoke minimizations action ["wip"] $ hfmap _elem m
-
-
 uiLMMAlg
-  :: Handler (FocusWIPT UI)
+  :: Handler (FocusLMMT UI)
   -> TVar Minimizations
   -> RAlg (LMM UI) (Const (UI Element))
 uiLMMAlg focusHandler minimizations lmm = Const $ do
       m <-  fetchLMM lmm
-      let action = liftIO $ focusHandler $ wrapFocus sing $ unmodifiedWIP $ Term $ hfmap _tag lmm
+      let action = liftIO $ focusHandler $ wrapFocus sing $  Term $ hfmap _tag lmm
       getConst $ browseMononoke minimizations action ["persisted"] $ hfmap _elem m
 
 
@@ -281,9 +231,6 @@ setup root = void $ do
   commitSnapshotIndexTVar <- liftIO . atomically $ newTVar Map.empty
   let commitSnapshotIndex = stmIOIndex commitSnapshotIndexTVar
 
-  inProgressCommitTVar :: TVar (Maybe (InProgressCommit UI))
-    <- liftIO . atomically $ newTVar $ Nothing
-
   blobStoreTvar <- liftIO . atomically $ newTVar emptyBlobStore
   let blobStore = stmIOStore blobStoreTvar
 
@@ -343,7 +290,7 @@ setup root = void $ do
 
   let redrawSidebar bs mipc = void $ do
         _ <- element sidebarRoot # set children []
-        element sidebarRoot #+ [ drawCommitEditor bs popupHandler modifyMergeTrieHandler focusChangeHandler mipc
+        element sidebarRoot #+ [ UI.div # withClass ["placeholder"]
                                , branchBrowser commitSnapshotIndex blobStore popupHandler bs focusChangeHandler updateBranchStateHandler
                                ]
 
@@ -366,11 +313,11 @@ setup root = void $ do
   -- discarded return value deregisters handler
   _ <- onEvent focusChangeEvent $ \focus -> do
     void $ element browserRoot # set children []
-    void $ element browserRoot #+ [browseWIPT focusChangeHandler minimizations focus]
+    void $ element browserRoot #+ [browseLMMT focusChangeHandler minimizations focus]
     pure ()
 
 
-  liftIO $ focusChangeHandler $ wrapFocus sing $ unmodifiedWIP initCommit
+  liftIO $ focusChangeHandler $ wrapFocus sing initCommit
 
   _ <- onEvent updateBranchStateEvent $ \ubs -> do
     bs' <- case ubs of

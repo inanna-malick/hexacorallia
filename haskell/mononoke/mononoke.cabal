@@ -25,12 +25,10 @@ library
       Merkle.App
       Merkle.Bonsai.MergeTrie
       Merkle.Bonsai.Types
-      Merkle.GUI.BrowseWIPT
       Merkle.GUI.CSS
       Merkle.GUI.Elements
       Merkle.GUI.Messages
       Merkle.GUI.Modal
-      Merkle.GUI.WorkingMergeTrie
       Merkle.GUI.State
       Merkle.GUI.Core
       Merkle.Generic.BlakeHash
