@@ -6,7 +6,7 @@
 module Merkle.App where
 
 
-import           Merkle.Bonsai.Types
+import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
 import           Merkle.Bonsai.MergeTrie
 import           Merkle.Generic.HRecursionSchemes
 import           Merkle.Generic.Merkle as M
@@ -205,7 +205,7 @@ commit root commitMsg = do
       pure $ toLMT $ lazyLoadHash store snapshotHash
   (HC (Tagged _ snapshot')) <- fetchLMMT snapshot
   let (Snapshot ft _ _) = snapshot'
-  diffs <- diffLocalState root ft
+  diffs <- diffLocalState root $ fromLMT ft
   wipCommit <- case diffs of
     [] -> throwError "attempted commit with no diffs"
     changes -> do
@@ -229,21 +229,21 @@ diffLocalState
      , MonadIO m
      )
   => NonEmpty Path
-  -> LMMT m 'FileTree
+  -> Term (Lazy m M) 'FileTree
   -> m [Change (Term M)]
 diffLocalState root snapshot = processRoot snapshot
   where
     listDirectory' x = filter (/= localStateName) <$> listDirectory x
-    processRoot :: LMMT m 'FileTree -> m [Change (Term M)]
+    processRoot :: Term (Lazy m M) 'FileTree -> m [Change (Term M)]
     processRoot lmmt = do
       liftIO $ putStrLn "processRoot"
       contents <- liftIO $ listDirectory' $ concatPath root
       let local = M.fromList $ fmap (\a -> (a, ())) contents
       remote <- do
-        (HC (Tagged _ m)) <- fetchLMMT lmmt
+        m <- unTerm lmmt ^. #node
         case m of
           File _ -> throwError "expected root path to be a dir in LMMT"
-          Dir  d -> pure d
+          Dir  d -> pure  d
       mconcat . fmap snd . M.toList <$>
         M.mergeA (M.traverseMissing $ remoteMissing' . pure)
                  (M.traverseMissing $ localMissing   . pure)
@@ -252,11 +252,11 @@ diffLocalState root snapshot = processRoot snapshot
 
 
     -- both paths present, file/dir conflict still possible
-    bothPresent :: NonEmpty Path -> () -> LMMT m 'FileTree -> m [Change (Term M)]
+    bothPresent :: NonEmpty Path -> () -> Term (Lazy m M) 'FileTree -> m [Change (Term M)]
     bothPresent path () lmmt = do
       liftIO $ putStrLn "bothPresent"
       let absolutePath = concatPath $ root <> path
-      (HC (Tagged _ m)) <- fetchLMMT lmmt
+      m <- unTerm lmmt ^. #node
       case m of
         Dir  remoteDirContents  -> do
           isDir <- liftIO $ doesDirectoryExist absolutePath
@@ -284,7 +284,7 @@ diffLocalState root snapshot = processRoot snapshot
           isFile <- liftIO $ doesFileExist absolutePath
           case isFile of
             True -> do -- diff contents. potential optimization, hash local before blob fetch.
-              (HC (Tagged _ remoteBlob)) <- fetchLMMT $ sfBlob remoteContentsLMMT
+              (HC (Tagged _ remoteBlob)) <- fetchLMMT $ toLMT $ sfBlob remoteContentsLMMT
               let (Blob remoteContents) = remoteBlob
               localContents <- liftIO $ readFile absolutePath
               case localContents == remoteContents of
@@ -302,10 +302,10 @@ diffLocalState root snapshot = processRoot snapshot
 
 
 
-    localMissing :: NonEmpty Path -> LMMT m 'FileTree -> m [Change (Term M)]
+    localMissing :: NonEmpty Path -> Term (Lazy m M) 'FileTree -> m [Change (Term M)]
     localMissing path lmmt = do
       liftIO $ putStrLn "localMissing"
-      (HC (Tagged _ m)) <- fetchLMMT lmmt
+      m <- unTerm lmmt ^. #node
       case m of
         Dir  remoteDirContents -> do
           res <- traverse (uncurry $ localMissing . (path <>) . pure) $ M.toList remoteDirContents
