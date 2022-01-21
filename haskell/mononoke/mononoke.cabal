@@ -34,6 +34,7 @@ library
       Merkle.Generic.BlakeHash
       Merkle.Generic.HRecursionSchemes
   other-modules:
+      Merkle.App.FileSystem
       Merkle.Bonsai.MergeTrie.Index
       Merkle.Bonsai.MergeTrie.Render
       Merkle.Bonsai.MergeTrie.Types
@@ -88,6 +89,7 @@ library
     , data-fix
     , deriving-compat
     , directory
+    , filepath
     , free
     , generic-optics
     , hedgehog
@@ -155,6 +157,7 @@ executable mononoke
     , data-fix
     , deriving-compat
     , directory
+    , filepath
     , free
     , generic-optics
     , hedgehog
@@ -228,6 +231,7 @@ test-suite spec
     , data-fix
     , deriving-compat
     , directory
+    , filepath
     , free
     , generic-optics
     , hedgehog

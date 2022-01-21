@@ -31,6 +31,12 @@ data CommandContext
   , ctxAddr :: Addr
   }
 
+buildStoreFromCtx :: MonadError String m => MonadIO m => CommandContext -> m (Store m)
+buildStoreFromCtx ctx = do
+  let clientConfig = mkGRPCClient (ctxAddr ctx) (fromInteger . ctxPort $ ctx)
+  client <- mkClient clientConfig
+  pure $ mkDagStore client
+
 appCommand :: Parser (CommandContext, Command)
 appCommand = (,) <$> ctx <*> cmd
   where
@@ -53,8 +59,6 @@ appCommand = (,) <$> ctx <*> cmd
     commitArgs = CreateCommit
              <$> branchName
              <*> many (argument str (metavar "MERGE..."))
-
-
 
     cmd = subparser
       ( command "diff" (info (pure ShowUncommitedChanges) ( progDesc "show uncommited changes"))
@@ -99,32 +103,43 @@ executeCommand
   => CommandContext
   -> Command
   -> m ()
-executeCommand ctx StartGUI = liftIO mononokeGUI
+executeCommand _ctx StartGUI = liftIO mononokeGUI -- TODO: pass in port/addr
 executeCommand ctx InitializeRepo = do
-          currentDir <- liftIO getCurrentDirectory
-          initLocalState (ctxAddr ctx) (ctxPort ctx) (pure currentDir)
+          root <- liftIO getCurrentDirectory
+          initLocalState ctx (pure root)
 executeCommand ctx (CreateCommit msg merges) = do
-          currentDir <- liftIO getCurrentDirectory
-          _changes <- commit (pure currentDir) msg
-          pure ()
-executeCommand ctx ShowUncommitedChanges = undefined
+          root <- liftIO getCurrentDirectory
+          store <- buildStoreFromCtx ctx
+          -- TODO: print changes
+          -- TODO: also accept merges
+          changes <- commit store (pure root) msg
+          liftIO $ print "commit complete"
+          liftIO $ print changes
+executeCommand ctx ShowUncommitedChanges = do
+          root <- pure <$> liftIO getCurrentDirectory
+          store <- buildStoreFromCtx ctx
+          localState  <- readLocalState root
+          snapshot <- undefined root localState
+          diffs <- diffLocalState root snapshot
+          liftIO $ print diffs
 executeCommand ctx (CreateBranch branchName) = do
-          currentDir <- pure <$> liftIO getCurrentDirectory
-          state <- readLocalState currentDir
-          state' <- checkoutBranch branchName state
-          writeLocalState currentDir state'
-executeCommand ctx (DeleteBranch branchName) = do
-          currentDir <- pure <$> liftIO getCurrentDirectory
-          state <- readLocalState currentDir
+          root <- pure <$> liftIO getCurrentDirectory
+          state <- readLocalState root
+          state' <- createBranch branchName state
+          writeLocalState root state'
+executeCommand _ctx (DeleteBranch branchName) = do
+          root <- pure <$> liftIO getCurrentDirectory
+          state  <- readLocalState root
           state' <- either throwError pure $ delBranch branchName state
-          writeLocalState currentDir state'
+          writeLocalState root state'
+-- TODO: requires ability to impose a state on the current dir
 executeCommand ctx (CheckoutBranch branchName) = undefined
 
 -- TODO: fn that checks out a branch but only if there are no diffs
 
 -- branch off current commit
-checkoutBranch :: MonadError String m => String -> LocalState -> m LocalState
-checkoutBranch name ls = do
+createBranch :: MonadError String m => String -> LocalState -> m LocalState
+createBranch name ls = do
     currentCommit <- lsCurrentCommit ls
     case M.member name (branches ls) of
       False -> pure $ ls { branches = M.insert name currentCommit (branches ls) }
@@ -132,10 +147,13 @@ checkoutBranch name ls = do
 
 -- delete existing branch
 delBranch :: String -> LocalState -> Either String LocalState
-delBranch name ls = case M.member name (branches ls) of
-  -- TODO: error if current branch
-  False -> Right $ ls { branches = M.delete name $ branches ls }
-  True  -> Left $ "del branch " ++ name ++ " that doesn't exist"
+delBranch name ls = do
+  case currentBranch ls == name of
+    True -> throwError "attempted to delete current branch, not allowed"
+    False -> pure ()
+  case M.member name (branches ls) of
+    False -> Right $ ls { branches = M.delete name $ branches ls }
+    True  -> Left $ "del branch " ++ name ++ " that doesn't exist"
 
 
 
@@ -144,12 +162,12 @@ delBranch name ls = case M.member name (branches ls) of
 -- if this file is _not_ present for anything other than init, it's an error.
 data LocalState
   = LocalState
-  { backingStoreAddr   :: String
-  , backingStorePort   :: Integer
-  , currentBranch      :: String -- INVARIANT: must exist in branches map
+  { currentBranch      :: String -- INVARIANT: must exist in branches map
+  -- TODO: this should be remote and fetched as needed
   , snapshotMappings   :: M.Map (Hash 'CommitT) (Hash 'SnapshotT)
   , branches           :: M.Map String (Hash 'CommitT)
   } deriving (Ord, Eq, Show, Generic)
+
 
 lsCurrentCommit
   :: MonadError String m
@@ -173,11 +191,10 @@ initLocalState
    . ( MonadError String m
      , MonadIO m
      )
-  => Addr
-  -> Port
+  => CommandContext
   -> NonEmpty Path
   -> m ()
-initLocalState addr port path = do
+initLocalState ctx path = do
   let path' = concatPath $ path <> pure localStateName
   -- check if exists
   isFile <- liftIO $ doesFileExist path'
@@ -185,14 +202,12 @@ initLocalState addr port path = do
     True -> do
       throwError $ "state file already exists at " ++ path'
     False -> do
-      let clientConfig = mkGRPCClient addr (fromInteger port)
+      let clientConfig = mkGRPCClient (ctxAddr ctx) (fromInteger . ctxPort $ ctx)
       client <- mkClient clientConfig
       let store = mkDagStore client
       emptyCommit <- sWrite store $ NullCommit
       let state = LocalState
-                { backingStoreAddr   = addr
-                , backingStorePort   = port
-                , snapshotMappings   = M.empty
+                { snapshotMappings   = M.empty
                 , branches           = M.singleton "main" emptyCommit
                 , currentBranch      = "main"
                 }
@@ -234,14 +249,12 @@ commit
    . ( MonadError String m
      , MonadIO m
      )
-  => NonEmpty Path
+  => Store m
+  -> NonEmpty Path
   -> String
   -> m [Change (Term M)]
-commit root commitMsg = do
+commit store root commitMsg = do
   localState <- readLocalState root
-  let clientConfig = mkGRPCClient (backingStoreAddr localState) (fromInteger $ backingStorePort localState)
-  client <- mkClient clientConfig
-  let store = mkDagStore client
   currentCommit <- lsCurrentCommit localState
   snapshot <- case M.lookup currentCommit (snapshotMappings localState) of
     Nothing -> do
