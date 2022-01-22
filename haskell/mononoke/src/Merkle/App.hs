@@ -305,16 +305,6 @@ commit store root commitMsg = do
   localState <- readLocalState root
   currentCommit <- lsCurrentCommit localState
   snapshot <- getOrMakeSnapshot store root
-    Nothing -> do
-      lastCommit <- view #node $ unTerm $ lazyLoadHash store currentCommit
-      let lastCommit' :: M (WIPT m) 'CommitT
-            = hfmap (unmodifiedWIP . toLMT) lastCommit
-      snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)
-      snapshotWIP <- either (throwError . ("merge errors in history during commit op" ++) . show) pure snapshotEWIP
-      snapshot <- uploadWIPT (sWrite store) $ modifiedWIP snapshotWIP
-      pure $ snapshot
-    Just snapshotHash -> do
-      pure $ toLMT $ lazyLoadHash store snapshotHash
   (HC (Tagged _ snapshot')) <- fetchLMMT snapshot
   let (Snapshot ft _ _) = snapshot'
   diffs <- diffLocalState root $ fromLMT ft
