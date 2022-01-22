@@ -16,6 +16,7 @@ import           System.Directory
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.Map.Strict as M
 import           Control.Monad.Except
+import           Control.Monad.Error
 import           Data.List.NonEmpty (NonEmpty)
 import           Data.Aeson as AE
 import GHC.Generics
@@ -24,6 +25,20 @@ import           Merkle.GUI.App (mononokeGUI)
 import Optics
 import Options.Applicative
 import Data.Semigroup ((<>))
+
+exec :: IO ()
+exec = do
+    (ctx, command) <- execParser opts
+    res <- runErrorT $ executeCommand ctx command
+    print res
+
+  where
+    opts = info appCommand
+      ( fullDesc
+     <> progDesc "perform version control operations"
+     <> header "a bonsai version control system based on generic merkle graph utils" )
+
+
 
 data CommandContext
   = CommandContext
@@ -45,7 +60,7 @@ appCommand = (,) <$> ctx <*> cmd
           ( long "port"
          <> metavar "Port"
          <> showDefault
-         <> value 8083
+         <> value 8088
          <> help "DAG store port" )
       <*> strOption
           ( long "addr"
@@ -243,6 +258,38 @@ writeLocalState containingDir ls = do
   liftIO $ encodeFile path ls
 
 
+getOrMakeSnapshot
+  :: forall m
+   . ( MonadError String m
+     , MonadIO m
+     )
+  => Store m
+  -> NonEmpty Path
+  -> m (LMMT m 'SnapshotT)
+getOrMakeSnapshot store root = do
+  localState <- readLocalState root
+  currentCommit <- lsCurrentCommit localState
+  case M.lookup currentCommit (snapshotMappings localState) of
+    Nothing -> do
+      lastCommit <- view #node $ unTerm $ lazyLoadHash store currentCommit
+      let lastCommit' :: M (WIPT m) 'CommitT
+            = hfmap (unmodifiedWIP . toLMT) lastCommit
+      snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)
+      snapshotWIP <- either (throwError . ("merge errors in history during commit op" ++) . show) pure snapshotEWIP
+      snapshot <- uploadWIPT (sWrite store) $ modifiedWIP snapshotWIP
+
+      let localState' =
+            localState
+              { snapshotMappings = M.insert currentCommit (hashOfLMMT snapshot) (snapshotMappings localState)
+              }
+      writeLocalState root localState'
+
+      pure $ snapshot
+    Just snapshotHash -> do
+      pure $ toLMT $ lazyLoadHash store snapshotHash
+
+
+
 -- TODO: needs to be merge aware - maybe _just_ build WIPT?
 commit
   :: forall m
@@ -254,9 +301,10 @@ commit
   -> String
   -> m [Change (Term M)]
 commit store root commitMsg = do
+  -- TODO: monad state for localstate or something, only persist at end.. mb..
   localState <- readLocalState root
   currentCommit <- lsCurrentCommit localState
-  snapshot <- case M.lookup currentCommit (snapshotMappings localState) of
+  snapshot <- getOrMakeSnapshot store root
     Nothing -> do
       lastCommit <- view #node $ unTerm $ lazyLoadHash store currentCommit
       let lastCommit' :: M (WIPT m) 'CommitT
@@ -278,6 +326,7 @@ commit store root commitMsg = do
       pure $ modifiedWIP $ Commit commitMsg changes' (pure $ unmodifiedWIP parent)
   newCommitHash <- hashOfLMMT <$> uploadWIPT (sWrite store) wipCommit
 
+  localState <- readLocalState root
   -- TODO: optics, modify via fn, lol
   let localState' = localState { branches =  M.insert (currentBranch localState) newCommitHash $ branches localState}
   writeLocalState root localState'

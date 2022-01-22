@@ -1,3 +1,4 @@
+import Merkle.App
 
-
-main = undefined
+main :: IO ()
+main = exec
