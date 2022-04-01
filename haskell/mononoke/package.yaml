@@ -64,6 +64,7 @@ dependencies:
   - stm
   - text
   - transformers
+  - utf8-string
   - warp
   - threepenny-gui
   - threepenny-gui-flexbox
@@ -75,6 +76,7 @@ library:
     - Merkle.App
     - Merkle.App.BackingStore
     - Merkle.App.Filesystem
+    - Merkle.App.Filesystem.Safe
     - Merkle.App.LocalState
     - Merkle.App.Types
     - Merkle.Bonsai.MergeTrie

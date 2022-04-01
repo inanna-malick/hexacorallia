@@ -154,7 +154,7 @@ resolveMergeTrie' commit root = do
 --   into parent commits to build snapshots if neccessary
 makeSnapshot
   :: Monad m
-  => MonadIO m
+  -- => MonadIO m -- TODO: monad logging for this exact case
   => M (WIPT m) 'CommitT -- can provide LMMT via 'unmodifiedWIP'
   -> IndexRead m -- index, will be always Nothing for initial WIP
   -> StoreRead m -- for expanding index reads
@@ -186,7 +186,7 @@ makeSnapshot commit index storeRead = do
 --   into parent commits to build snapshots if neccessary
 makeMT
   :: Monad m
-  => MonadIO m
+  -- => MonadIO m
   => [Change (WIPT m)]          -- list of inline changes
   -> NonEmpty (WIPT m 'CommitT) -- parent commits
   -> IndexRead m -- index, will be always Nothing for initial WIP

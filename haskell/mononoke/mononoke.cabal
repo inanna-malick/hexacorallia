@@ -25,6 +25,7 @@ library
       Merkle.App
       Merkle.App.BackingStore
       Merkle.App.Filesystem
+      Merkle.App.Filesystem.Safe
       Merkle.App.LocalState
       Merkle.App.Types
       Merkle.Bonsai.MergeTrie
@@ -39,7 +40,6 @@ library
       Merkle.Generic.HRecursionSchemes
   other-modules:
       Merkle.App.Command
-      Merkle.App.Filesystem.Safe
       Merkle.Bonsai.MergeTrie.Index
       Merkle.Bonsai.MergeTrie.Render
       Merkle.Bonsai.MergeTrie.Types
@@ -116,6 +116,7 @@ library
     , threepenny-gui
     , threepenny-gui-flexbox
     , transformers
+    , utf8-string
     , warp
   default-language: Haskell2010
 
@@ -185,6 +186,7 @@ executable mononoke
     , threepenny-gui
     , threepenny-gui-flexbox
     , transformers
+    , utf8-string
     , warp
   default-language: Haskell2010
 
@@ -262,5 +264,6 @@ test-suite spec
     , threepenny-gui
     , threepenny-gui-flexbox
     , transformers
+    , utf8-string
     , warp
   default-language: Haskell2010

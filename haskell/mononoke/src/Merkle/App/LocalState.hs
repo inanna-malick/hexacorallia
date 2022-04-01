@@ -6,6 +6,7 @@
 module Merkle.App.LocalState where
 
 
+import           Merkle.App.Filesystem.Safe
 import           Merkle.App.BackingStore (BackingStore(..))
 import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
 import           Merkle.Bonsai.MergeTrie
@@ -27,6 +28,8 @@ import Optics
 import Options.Applicative
 import Data.Semigroup ((<>))
 
+import Data.ByteString.Lazy.UTF8 as BLU -- from utf8-string
+import Data.ByteString.UTF8 as BSU
 
 localStateName :: Path
 localStateName = ".bonsai.state"
@@ -61,53 +64,52 @@ instance FromJSON LocalState
 initLocalState
   :: forall m
    . ( MonadError String m
-     , MonadIO m
+     , MonadFileSystem m
      )
-  => BackingStore
-  -> NonEmpty Path
+  => Store m
   -> m ()
-initLocalState ctx path = do
-  let path' = concatPath $ path <> pure localStateName
+initLocalState store = do
+  RootPath root <- rootPath
+  let path = concatPath $ pure root <> pure localStateName
   -- check if exists
-  isFile <- liftIO $ doesFileExist path'
-  case isFile of
-    True -> do
-      throwError $ "state file already exists at " ++ path'
-    False -> do
-      let clientConfig = mkGRPCClient (ctxAddr ctx) (fromInteger . ctxPort $ ctx)
-      client <- mkClient clientConfig
-      let store = mkDagStore client
+  entityTypeSafe path >>= \case
+    Just DirEntity -> do
+      throwError $ "state dir (???) already exists at " ++ path
+    Just FileEntity -> do
+      throwError $ "state file already exists at " ++ path
+    Nothing -> do
       emptyCommit <- sWrite store $ NullCommit
       let state = LocalState
                 { snapshotMappings   = M.empty
                 , branches           = M.singleton "main" emptyCommit -- TODO: make this an option
                 , currentBranch      = "main"
                 }
-      writeLocalState path state
+      writeLocalState state
   pure ()
 
 readLocalState
   :: forall m
    . ( MonadError String m
-     , MonadIO m
+     , MonadFileSystem m
      )
-  => NonEmpty Path
-  -> m LocalState
-readLocalState containingDir = do
-  let path = concatPath (containingDir <> pure localStateName)
-  liftIO (eitherDecodeFileStrict path) >>= liftEither
+  => m LocalState
+readLocalState  = do
+  RootPath root <- rootPath
+  let path = concatPath (pure root <> pure localStateName)
+  readFileSafe path >>= pure . eitherDecodeStrict . BSU.fromString  >>= liftEither
 
 
 writeLocalState
   :: forall m
-   . ( MonadIO m
+   . ( Monad m
+     , MonadFileSystem m
      )
-  => NonEmpty Path
-  -> LocalState
+  => LocalState
   -> m ()
-writeLocalState containingDir ls = do
-  let path = concatPath (containingDir <> pure localStateName)
-  liftIO $ encodeFile path ls
+writeLocalState ls = do
+  RootPath root <- rootPath
+  let path = concatPath (pure root <> pure localStateName)
+  writeFileSafe path $ (BLU.toString $ encode ls)
 
 -- branch off current commit
 createBranchLS :: MonadError String m => String -> LocalState -> m LocalState
