@@ -76,6 +76,7 @@ library:
     - Merkle.App.BackingStore
     - Merkle.App.Filesystem
     - Merkle.App.LocalState
+    - Merkle.App.Types
     - Merkle.Bonsai.MergeTrie
     - Merkle.Bonsai.Types
     - Merkle.GUI.CSS

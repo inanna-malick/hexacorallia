@@ -26,6 +26,7 @@ library
       Merkle.App.BackingStore
       Merkle.App.Filesystem
       Merkle.App.LocalState
+      Merkle.App.Types
       Merkle.Bonsai.MergeTrie
       Merkle.Bonsai.Types
       Merkle.GUI.CSS
@@ -39,7 +40,6 @@ library
   other-modules:
       Merkle.App.Command
       Merkle.App.Filesystem.Safe
-      Merkle.App.Types
       Merkle.Bonsai.MergeTrie.Index
       Merkle.Bonsai.MergeTrie.Render
       Merkle.Bonsai.MergeTrie.Types

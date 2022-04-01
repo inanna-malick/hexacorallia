@@ -11,6 +11,7 @@ import           Control.Concurrent (threadDelay)
 import           Merkle.App.BackingStore (BackingStore(..), buildStoreFromCtx)
 import           Merkle.App.LocalState (initLocalState)
 import           Merkle.App.Filesystem (buildCommitFromFilesystemState)
+import           Merkle.App.Types
 import Merkle.Bonsai.Types
 
 import qualified Data.List.NonEmpty as NEL
@@ -23,47 +24,44 @@ import qualified System.Process as P
 main :: IO ()
 main = hspec $ do
   describe "Mononoke cmd line app" $ do
-      let runTest = withSystemTempDirectory "mononoke_test_root"
-      it "initializes a repo and makes a commit" $ runTest testInitCommit
-
-
-
-testInitCommit :: FilePath -> IO ()
-testInitCommit root = wrapper (a >>= expect)
-  where
-    -- OOF: make this an, idk, a thing - a wrapper, a withX thing
-    -- NOTE: with regard to directory run in, lol
-    -- NOTE: actually, just have a with_store fn that only exposes that
-    wrapper action = P.withCreateProcess (P.proc "../../run_test_dagstore" [concatPath dagStoreRoot, show port]) { P.std_out = P.Inherit, P.std_err = P.Inherit } $
-                   \_stdin _stdout _stderr _ph -> do
-                       -- wait for app to start, lmao. todo: be better, lol. lol.
-                       threadDelay 1000000
-                       action
-
-    testRoot, dagStoreRoot :: NEL.NonEmpty Path
-    testRoot = pure root <> (pure "test")
-    dagStoreRoot = pure root <> (pure "dagstore")
-    port = 8080
-    expect = shouldBe toExpect
-    toExpect = uncurry Change <$>
-           [( (NEL.fromList ["a", "b", "c"]), Add $ Term $ Blob "c")
-           ,( (NEL.fromList ["b", "c"]), Add $ Term $ Blob "c")
-           ,( (NEL.fromList ["c"]), Add $ Term $ Blob "c")
-           ,( (NEL.fromList ["d"]), Add $ Term $ Blob "d")
-           ]
-    a = do
-      res <- runExceptT $ do
-            let ctx = BackingStore port "localhost"
+      it "initializes a repo and makes a commit" $ withDAGStore 8080 $ \testRoot' store -> do
+            let testRoot = pure testRoot'
+                ctx = BackingStore 8080 "localhost" -- TODO: shouldn't need this here
+                toExpect = uncurry Change <$>
+                      [( (NEL.fromList ["a", "b", "c"]), Add $ Term $ Blob "c")
+                      ,( (NEL.fromList ["b", "c"]), Add $ Term $ Blob "c")
+                      ,( (NEL.fromList ["c"]), Add $ Term $ Blob "c")
+                      ,( (NEL.fromList ["d"]), Add $ Term $ Blob "d")
+                      ]
             store <- buildStoreFromCtx ctx
-            liftIO $ putStrLn "preinit"
             buildFT testRoot testFT
-            liftIO $ putStrLn "postbuild"
             initLocalState ctx testRoot
-            liftIO $ putStrLn "postinit"
-            -- ls <- App.readLocalState (pure root)
-            buildCommitFromFilesystemState store testRoot "first commit"
+            res <- buildCommitFromFilesystemState store testRoot "first commit"
+            liftIO $ res `shouldBe` toExpect
 
-      either (assertFailure . ("test failed with err: " ++)) pure res
+
+withDAGStore
+   :: Port -- TODO: generate port, somehow
+   -> (FilePath -> Store (ExceptT String IO) -> ExceptT String IO a) -- TODO: provide port via monad reader
+   -> IO a
+withDAGStore port action
+  = withSystemTempDirectory "mononoke_test_root" $ \root -> do
+      let dagStoreRoot = pure root <> (pure "dagstore")
+      P.withCreateProcess
+        (P.proc "../../run_test_dagstore" [concatPath dagStoreRoot, show port])
+        { P.std_out = P.Inherit, P.std_err = P.Inherit }$
+        \_stdin _stdout _stderr _ph -> do
+            -- wait for app to start, lmao. todo: be better, lol. lol.
+            threadDelay 1000000
+            res <- runExceptT $ do
+                      let ctx = BackingStore port "localhost"
+                      store <- buildStoreFromCtx ctx
+                      let testRoot = root <> "test_root"
+                      -- ok so this _should_ be fine but the test seems to create the dir it uses as root? FIXME
+                      -- liftIO $ createDirectory testRoot
+                      action testRoot store
+            either (assertFailure . ("test failed with err: " ++)) pure res
+
 
 
 
