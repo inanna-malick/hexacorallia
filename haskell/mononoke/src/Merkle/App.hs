@@ -10,7 +10,7 @@ import           Merkle.App.Filesystem.Safe (RootPath(..), MonadFileSystem(..))
 import           Merkle.App.Command
 import           Merkle.App.BackingStore
 import           Merkle.App.LocalState
-import           Merkle.App.Filesystem (buildCommitFromFilesystemState, compareFilesystemToTree)
+import           Merkle.App.Filesystem (getOrMakeSnapshotFT, buildCommitFromFilesystemState, compareFilesystemToTree)
 import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
 import           Merkle.Bonsai.MergeTrie
 import           Merkle.Generic.HRecursionSchemes
@@ -65,11 +65,10 @@ executeCommand store (CreateCommit msg merges) = do
           changes <- buildCommitFromFilesystemState store msg
           liftIO $ print "commit complete"
           liftIO $ print changes
-executeCommand _store ShowUncommitedChanges = do
-          localState  <- readLocalState
-          snapshot <- undefined localState
+executeCommand store ShowUncommitedChanges = do
+          snapshotFT <- getOrMakeSnapshotFT store
           RootPath root <- rootPath
-          diffs <- compareFilesystemToTree (pure root) snapshot
+          diffs <- compareFilesystemToTree (pure root) snapshotFT
           liftIO $ print diffs
 executeCommand _store (CreateBranch branchName) = do
           state <- readLocalState

@@ -29,10 +29,23 @@ import Options.Applicative
 import Data.Semigroup ((<>))
 
 
+
+getOrMakeSnapshotFT
+  :: forall m
+   . ( MonadError String m
+     , MonadFileSystem m
+     )
+  => Store m
+  -> m (Term (Lazy m M) 'FileTree)
+getOrMakeSnapshotFT store = do
+  snapshot <- getOrMakeSnapshot store
+  (HC (Tagged _ snapshot')) <- fetchLMMT snapshot
+  let (Snapshot ft _ _) = snapshot'
+  pure $ fromLMT ft
+
 getOrMakeSnapshot
   :: forall m
    . ( MonadError String m
-     -- , MonadIO m
      , MonadFileSystem m
      )
   => Store m
@@ -76,11 +89,9 @@ buildCommitFromFilesystemState store commitMsg = do
   -- TODO: monad state for localstate or something, only persist at end.. mb..
   localState <- readLocalState
   currentCommit <- lsCurrentCommit localState
-  snapshot <- getOrMakeSnapshot store
-  (HC (Tagged _ snapshot')) <- fetchLMMT snapshot
-  let (Snapshot ft _ _) = snapshot'
+  ft <- getOrMakeSnapshotFT store
   RootPath root <- rootPath
-  diffs <- compareFilesystemToTree (pure root) $ fromLMT ft
+  diffs <- compareFilesystemToTree (pure root) $ ft
   wipCommit <- case diffs of
     [] -> throwError "attempted commit with no diffs"
     changes -> do

@@ -30,7 +30,7 @@ validatePath
 validatePath path = do
   (RootPath root) <- ask
   if (root `isPrefixOf` path) then pure () else throwError (mconcat ["root ", root, " is not a prefix of ", path])
-  if (".." `isInfixOf` path) then throwError (mconcat [path, " contains illegal '..' sequence"]) else pure () 
+  if (".." `isInfixOf` path) then throwError (mconcat [path, " contains illegal '..' sequence"]) else pure ()
   pure ()
 
 
