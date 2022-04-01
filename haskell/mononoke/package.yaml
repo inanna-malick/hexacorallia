@@ -73,6 +73,9 @@ library:
   source-dirs: src
   exposed-modules:
     - Merkle.App
+    - Merkle.App.BackingStore
+    - Merkle.App.Filesystem
+    - Merkle.App.LocalState
     - Merkle.Bonsai.MergeTrie
     - Merkle.Bonsai.Types
     - Merkle.GUI.CSS

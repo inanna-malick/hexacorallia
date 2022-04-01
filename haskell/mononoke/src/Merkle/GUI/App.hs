@@ -20,7 +20,7 @@ import           Data.Set (Set)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Text.Lazy (unpack)
-import           Data.Singletons.TH (SingI, sing)
+import           Data.Singletons.TH (SingI, sing, SomeSing)
 import           Graphics.UI.Threepenny.Core
 import qualified Graphics.UI.Threepenny as UI
 import           Graphics.UI.Threepenny.Ext.Flexbox

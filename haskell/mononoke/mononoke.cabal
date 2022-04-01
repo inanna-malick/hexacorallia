@@ -23,6 +23,9 @@ source-repository head
 library
   exposed-modules:
       Merkle.App
+      Merkle.App.BackingStore
+      Merkle.App.Filesystem
+      Merkle.App.LocalState
       Merkle.Bonsai.MergeTrie
       Merkle.Bonsai.Types
       Merkle.GUI.CSS
@@ -34,7 +37,9 @@ library
       Merkle.Generic.BlakeHash
       Merkle.Generic.HRecursionSchemes
   other-modules:
-      Merkle.App.FileSystem
+      Merkle.App.Command
+      Merkle.App.Filesystem.Safe
+      Merkle.App.Types
       Merkle.Bonsai.MergeTrie.Index
       Merkle.Bonsai.MergeTrie.Render
       Merkle.Bonsai.MergeTrie.Types

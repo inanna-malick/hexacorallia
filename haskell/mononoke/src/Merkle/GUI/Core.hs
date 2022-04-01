@@ -27,6 +27,8 @@ data Focus x
 type FocusWIPT m = Focus (WIPT m)
 type FocusLMMT m = Focus (LMMT m)
 
+
+
 -- (sing :: Sing i)
 wrapFocus :: forall (i :: MTag) x. Sing i -> x i -> Focus x
 wrapFocus s x = case s of

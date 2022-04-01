@@ -8,7 +8,9 @@ import           Data.Fix (Fix(..))
 import           System.Directory as D
 import           Control.Monad.Except
 import           Control.Concurrent (threadDelay)
-import qualified Merkle.App as App
+import           Merkle.App.BackingStore (BackingStore(..), buildStoreFromCtx)
+import           Merkle.App.LocalState (initLocalState)
+import           Merkle.App.Filesystem (buildCommitFromFilesystemState)
 import Merkle.Bonsai.Types
 
 import qualified Data.List.NonEmpty as NEL
@@ -29,7 +31,9 @@ main = hspec $ do
 testInitCommit :: FilePath -> IO ()
 testInitCommit root = wrapper (a >>= expect)
   where
+    -- OOF: make this an, idk, a thing - a wrapper, a withX thing
     -- NOTE: with regard to directory run in, lol
+    -- NOTE: actually, just have a with_store fn that only exposes that
     wrapper action = P.withCreateProcess (P.proc "../../run_test_dagstore" [concatPath dagStoreRoot, show port]) { P.std_out = P.Inherit, P.std_err = P.Inherit } $
                    \_stdin _stdout _stderr _ph -> do
                        -- wait for app to start, lmao. todo: be better, lol. lol.
@@ -49,13 +53,15 @@ testInitCommit root = wrapper (a >>= expect)
            ]
     a = do
       res <- runExceptT $ do
-            liftIO $ putStrLn "prebuild"
+            let ctx = BackingStore port "localhost"
+            store <- buildStoreFromCtx ctx
+            liftIO $ putStrLn "preinit"
             buildFT testRoot testFT
             liftIO $ putStrLn "postbuild"
-            App.initLocalState "localhost" 8080 testRoot
+            initLocalState ctx testRoot
             liftIO $ putStrLn "postinit"
             -- ls <- App.readLocalState (pure root)
-            App.commit testRoot "first commit"
+            buildCommitFromFilesystemState store testRoot "first commit"
 
       either (assertFailure . ("test failed with err: " ++)) pure res
 
