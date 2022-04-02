@@ -1,15 +1,13 @@
 {-# LANGUAGE RankNTypes #-}
 
+
 import Test.Hspec
-import Test.QuickCheck
-import Control.Exception (evaluate)
 import System.IO.Temp
-import qualified Data.Map.Strict as M
-import           Data.Functor.Foldable (cata, ana)
+import           Data.Functor.Foldable (cata)
 import           Data.Fix (Fix(..))
 import           System.Directory as D
 import           Control.Monad.Except
-import           Control.Monad.Reader (runReaderT, MonadReader)
+import           Control.Monad.Reader (runReaderT)
 import           Control.Concurrent (threadDelay)
 import           Merkle.App.Filesystem.Safe (RootPath(..), MonadFileSystem(..))
 import           Merkle.App.BackingStore (BackingStore(..), buildStoreFromCtx)
@@ -23,12 +21,19 @@ import           Merkle.Generic.HRecursionSchemes
 
 import Test.HUnit.Lang
 import qualified System.Process as P
+import qualified System.Random as R
+
 
 
 main :: IO ()
 main = hspec $ do
   describe "Mononoke cmd line app" $ do
-      it "initializes a repo and makes a commit" $ withDAGStore 8080 $ \store -> do
+      it "initializes a repo and makes a commit" $ withDAGStore $ \store -> do
+            let toCreate = Fix $ Dir' [("a", a), ("b", b), ("c", c), ("d", d)]
+                a = Fix $ Dir' [("b", b)]
+                b = Fix $ Dir' [("c", c)]
+                c = Fix $ File' "c"
+                d = Fix $ File' "d"
             let toExpect = uncurry Change <$>
                       [( (NEL.fromList ["a", "b", "c"]), Add $ Term $ Blob "c")
                       ,( (NEL.fromList ["b", "c"]), Add $ Term $ Blob "c")
@@ -36,15 +41,18 @@ main = hspec $ do
                       ,( (NEL.fromList ["d"]), Add $ Term $ Blob "d")
                       ]
             RootPath testRoot <- rootPath
-            buildFT (pure testRoot) testFT
+            buildFT (pure testRoot) toCreate
             initLocalState store
             res <- buildCommitFromFilesystemState store "first commit"
             liftIO $ res `shouldBe` toExpect
 
 
+randomPort :: IO Port
+randomPort = R.getStdRandom $ R.randomR (16385, 65534)
+
+
 withDAGStore
-   :: Port -- TODO: generate port, somehow
-   -> ( forall m
+   :: forall a. Show a => ( forall m
       . ( MonadIO m
         , MonadFileSystem m
         , MonadError String m
@@ -53,39 +61,25 @@ withDAGStore
        -> m a
       )
    -> IO a
-withDAGStore port action
+withDAGStore action
   = withSystemTempDirectory "mononoke_test_root" $ \root -> do
       let dagStoreRoot = pure root <> (pure "dagstore")
+      port <- liftIO $ randomPort
+      -- res <- P.withCreateProcess
       P.withCreateProcess
-        (P.proc "../../run_test_dagstore" [concatPath dagStoreRoot, show port])
-        { P.std_out = P.Inherit, P.std_err = P.Inherit }$
-        \_stdin _stdout _stderr _ph -> do
-            -- wait for app to start, lmao. todo: be better, lol. lol.
-            threadDelay 1000000
-            let testRoot = RootPath $ concatPath $ pure root <> pure "test_root"
-            -- ok so this _should_ be fine but the test seems to create the dir it uses as root? FIXME
-            -- liftIO $ createDirectory testRoot
-            res <- flip runReaderT testRoot $ runExceptT $ do
-                      let ctx = BackingStore port "localhost"
-                      store <- buildStoreFromCtx ctx
-                      action store
-            either (assertFailure . ("test failed with err: " ++)) pure res
-
-
-
-
-testFT :: FT
-testFT = Fix $ Dir' $ M.fromList [("a", a), ("b", b), ("c", c), ("d", d)]
-  where
-    a = Fix $ Dir' $ M.fromList [("b", b)]
-    b = Fix $ Dir' $ M.fromList [("c", c)]
-    c = Fix $ File' "c"
-    d = Fix $ File' "d"
-
-
-
--- TODO: make this generic, such that it is also used in checking out new branches
---       and imposing said state on the filesystem
+        (P.proc "cargo" ["run", "--bin", "dag-store", "--", "--fs_path", concatPath dagStoreRoot, "-p", show port])
+        { P.std_out = P.Inherit, P.std_err = P.Inherit } $ \_stdin _stdout _stderr _ph -> do
+                -- wait for app to start, lmao. todo: be better, lol. lol.
+                threadDelay 1000000
+                let testRoot = RootPath $ concatPath $ pure root <> pure "test_root"
+                -- ok so this _should_ be fine but the test seems to create the dir it uses as root? FIXME
+                -- TODO: oh right, the init fn creates a dir outside of the rootpath reader ctx
+                -- liftIO $ createDirectory testRoot
+                res <- flip runReaderT testRoot $ runExceptT $ do
+                          let ctx = BackingStore port "localhost"
+                          store <- buildStoreFromCtx ctx
+                          action store
+                either (assertFailure . ("test failed with err: " ++)) pure res
 
 buildFT
   :: forall m
@@ -105,7 +99,7 @@ buildFT root ft = (cata f ft) []
     f :: FT' ([FilePath] -> m ()) -> ([FilePath] -> m ())
     f (Dir' xs) path = do
       liftIO $ D.createDirectory $ concat path
-      mconcat <$> traverse (f' path) (M.toList xs)
+      mconcat <$> traverse (f' path) xs
     f (File' _) [] = -- throw if file entity at root dir
       throwError "file at root path of FT to build on filesystem"
     f (File' contents) path = do
@@ -119,5 +113,5 @@ type FT = Fix FT'
 
 data FT' a
   = File' String
-  | Dir' (M.Map String a)
+  | Dir' [(String, a)]
   deriving (Functor)

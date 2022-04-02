@@ -1,7 +1,0 @@
-#!/bin/bash
-set -euxo pipefail
-
-cargo run --bin dag-store -- --fs_path $1 -p $2
-
-trap "trap - SIGTERM && kill -- -$$" SIGINT SIGTERM EXIT
-wait

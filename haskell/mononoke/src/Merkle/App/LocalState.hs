@@ -24,7 +24,6 @@ import           Data.List.NonEmpty (NonEmpty)
 import           Data.Aeson as AE
 import GHC.Generics
 
-import           Merkle.GUI.App (mononokeGUI)
 import Optics
 import Options.Applicative
 import Data.Semigroup ((<>))

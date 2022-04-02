@@ -61,6 +61,7 @@ dependencies:
   - safe-exceptions
   - singletons
   - split
+  - random
   - stm
   - text
   - transformers

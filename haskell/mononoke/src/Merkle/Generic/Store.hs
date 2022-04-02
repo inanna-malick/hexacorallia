@@ -9,12 +9,15 @@ module Merkle.Generic.Store
   ( Store(..)
   , fetchNode
   , uploadNode
+  , transformStore
   )
   where
 
 --------------------------------------------
 import           Merkle.Generic.HRecursionSchemes
 import           Merkle.Generic.BlakeHash
+
+import           Data.Singletons.TH (SingI)
 --------------------------------------------
 
 fetchNode :: Store m f -> NatM m Hash (f Hash)
@@ -33,3 +36,16 @@ data Store m f
   { sRead  :: NatM m Hash (f Hash)
   , sWrite :: NatM m (f Hash) Hash
   }
+
+transformStore
+  :: forall m1 m2 f
+   . (forall x. m1 x -> m2 x)
+  -> Store m1 f
+  -> Store m2 f
+transformStore f (Store read1 write1) = Store read2 write2
+  where
+    read2  :: NatM m2 Hash (f Hash)
+    read2  h = f $ read1  h
+    write2 :: NatM m2 (f Hash) Hash
+    write2 x = f $ write1 x
+

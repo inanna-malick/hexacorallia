@@ -16,6 +16,6 @@ data BrowserNavigation m
 
 
 data UpdateBranchState
-  = ChangeFocus BranchFocus -- blocked if IPC is Just
+  = ChangeFocus BranchFocus -- blocked if IPC is Just (NOTE: what does this mean? zero context lol)
 
 

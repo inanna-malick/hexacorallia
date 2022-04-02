@@ -25,6 +25,7 @@ import           Graphics.UI.Threepenny.Core
 import qualified Graphics.UI.Threepenny as UI
 import           Graphics.UI.Threepenny.Ext.Flexbox
 --------------------------------------------
+import           Merkle.App.LocalState
 import           Merkle.Bonsai.Types
 import qualified Merkle.Bonsai.Types.Examples as Examples
 import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagName')
@@ -182,9 +183,9 @@ browseMononoke minimizations focusAction extraTags (HC (Tagged h m)) = Const $ d
     browseMononoke' (Blob c) =  UI.string $ "\"" ++ c ++ "\""
 
 
-mononokeGUI :: IO ()
-mononokeGUI = do
-  startGUI (defaultConfig { jsStatic = Just "static"}) setup
+mononokeGUI :: LocalState -> Store UI -> IO ()
+mononokeGUI localstate store = do
+  startGUI (defaultConfig { jsStatic = Just "static"}) (setup localstate store)
 
 
 -- NOTE/TODO: this could all be in a single STM transaction. wild.
@@ -219,8 +220,8 @@ updateSnapshotIndexWIPT store index commit = do
   makeSnapshot commit' index store
 
 
-setup :: Window -> UI ()
-setup root = void $ do
+setup :: LocalState -> Store UI -> Window -> UI ()
+setup localstate store root = void $ do
   _ <- set UI.title "chibi mononoke!" (pure root)
   void $ getHead root #+ [ mkElement "style" # set (UI.text) (unpack (Clay.render css))
                          ]

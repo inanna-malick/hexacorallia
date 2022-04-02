@@ -107,6 +107,7 @@ library
     , network
     , optics
     , optparse-applicative
+    , random
     , recursion-schemes
     , safe-exceptions
     , singletons
@@ -177,6 +178,7 @@ executable mononoke
     , network
     , optics
     , optparse-applicative
+    , random
     , recursion-schemes
     , safe-exceptions
     , singletons
@@ -254,6 +256,7 @@ test-suite spec
     , optics
     , optparse-applicative
     , process
+    , random
     , recursion-schemes
     , safe-exceptions
     , singletons
