@@ -31,6 +31,7 @@ import Data.Semigroup ((<>))
 import Data.ByteString.Lazy.UTF8 as BLU -- from utf8-string
 import Data.ByteString.UTF8 as BSU
 
+
 localStateName :: Path
 localStateName = ".bonsai.state"
 
@@ -46,6 +47,7 @@ data LocalState
   } deriving (Ord, Eq, Show, Generic)
 
 
+-- NOTE: FIXME: reverse name
 lsBranchForCommit
   :: MonadError String m
   => BranchName

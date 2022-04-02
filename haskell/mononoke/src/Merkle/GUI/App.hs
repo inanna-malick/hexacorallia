@@ -11,31 +11,28 @@ import           Control.Concurrent.STM
 import           Control.Monad (void)
 import           Control.Monad.Trans
 import           Control.Monad.Trans.Except
-import           Control.Monad.Trans.Maybe
-import           Data.Default
 import           Data.List (intersperse)
-import           Data.List.NonEmpty (toList, nonEmpty, (<|), NonEmpty(..))
+import           Data.List.NonEmpty (toList, nonEmpty, NonEmpty(..))
+import           Merkle.Bonsai.Types.Tags (typeTagName')
+
 import           Data.List.Split (splitOn)
 import           Data.Set (Set)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import           Data.Text.Lazy (unpack)
-import           Data.Singletons.TH (SingI, sing, SomeSing)
+import           Data.Singletons.TH (SingI, sing)
 import           Graphics.UI.Threepenny.Core
 import qualified Graphics.UI.Threepenny as UI
 import           Graphics.UI.Threepenny.Ext.Flexbox
 --------------------------------------------
 import           Merkle.App.LocalState
 import           Merkle.Bonsai.Types
-import qualified Merkle.Bonsai.Types.Examples as Examples
-import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagName')
 import           Merkle.Bonsai.MergeTrie
 import           Merkle.GUI.CSS
 import           Merkle.GUI.Core
 import           Merkle.GUI.Elements
 import           Merkle.GUI.State
 import qualified Merkle.GUI.Modal as Modal
-import           Merkle.GUI.Messages
 import           Merkle.Generic.BlakeHash
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
@@ -46,12 +43,12 @@ type Minimizations = Set RawBlakeHash
 branchBrowser
   :: Index UI
   -> Store UI
-  -> Handler (SpawnPopup UI)
+  -> Handler (Modal.SpawnPopup UI)
   -> BranchState UI
   -> Handler (FocusLMMT UI)
-  -> Handler UpdateBranchState
+  -> Handler BranchFocus
   -> UI Element
-branchBrowser commitSnapshotIndex store popRequest bs focusChangeHandler updateBranchStateHandler = do
+branchBrowser commitSnapshotIndex store _popRequest bs focusChangeHandler updateBranchStateHandler = do
     let extraBranches = (\(f,c) -> (OtherBranch f, c)) <$> bsBranches bs
     faUl #+ (fmap drawBranch $ [(MainBranch, bsMainBranch bs)] ++ extraBranches)
 
@@ -67,7 +64,7 @@ branchBrowser commitSnapshotIndex store popRequest bs focusChangeHandler updateB
       let extraTags = if f == bsFocus bs then ["focus", "branch"] else ["branch"]
       let extraActions = if f == bsFocus bs
             then []
-            else [("fa-search", liftIO $ updateBranchStateHandler $ ChangeFocus f)]
+            else [("fa-search", liftIO $ updateBranchStateHandler f)]
 
       case f of
         MainBranch    -> do
@@ -185,7 +182,8 @@ browseMononoke minimizations focusAction extraTags (HC (Tagged h m)) = Const $ d
 
 mononokeGUI :: LocalState -> Store UI -> IO ()
 mononokeGUI localstate store = do
-  startGUI (defaultConfig { jsStatic = Just "static"}) (setup localstate store)
+  -- TODO/FIXME - make this work on other people's machines by, idk, packaging static files or similar (or just an env var lol)
+  startGUI (defaultConfig { jsStatic = Just "/home/inanna/hexacorallia/haskell/mononoke/static"}) (setup localstate store)
 
 
 -- NOTE/TODO: this could all be in a single STM transaction. wild.
@@ -204,6 +202,7 @@ updateSnapshotIndexLMMT store index commit = do
     Nothing -> do
       snap <- makeSnapshot (hfmap unmodifiedWIP commit') (iRead index) (sRead store)
       let wipt = modifiedWIP snap
+      -- NOTE: this is the only place that writes occur
       uploadedSnap <- lift $ uploadWIPT (sWrite store) wipt
       lift $ (iWrite index) (hashOfLMMT commit) (hashOfLMMT uploadedSnap)
       pure uploadedSnap
@@ -232,37 +231,15 @@ setup localstate store root = void $ do
   commitSnapshotIndexTVar <- liftIO . atomically $ newTVar Map.empty
   let commitSnapshotIndex = stmIOIndex commitSnapshotIndexTVar
 
-  blobStoreTvar <- liftIO . atomically $ newTVar emptyBlobStore
-  let blobStore = stmIOStore blobStoreTvar
-
-  initCommit <- expandHash (sRead blobStore) <$> uploadM (sWrite blobStore) Examples.commit1
-  branchCommit <- expandHash (sRead blobStore) <$> uploadM (sWrite blobStore) Examples.commit2
-
-  let initialBranchState = BranchState
-                         { bsMainBranch = initCommit
-                         , bsBranches = [("branch", branchCommit)]
-                         , bsFocus = MainBranch
-                         }
+  let initialBranchState = fromLocalState store localstate
 
 
   branchState <- liftIO . atomically $ newTVar initialBranchState
   minimizations <- liftIO . atomically $ newTVar (Set.empty)
 
-  let updateCurrentBranch :: LMMT UI 'CommitT -> STM ()
-      updateCurrentBranch commit = do
-        bs <- readTVar branchState
-        let focus = bsFocus bs
-        case focus of
-          MainBranch -> do
-            writeTVar branchState $ bs { bsMainBranch = commit}
-          OtherBranch b -> do
-            let update (s,c) | s == b    = (s, commit) -- update commit if exists (janky? maybe, idk)
-                             | otherwise = (s,c)
-            writeTVar branchState $ bs { bsBranches = update <$> bsBranches bs}
 
   (updateBranchStateEvent, updateBranchStateHandler) <- liftIO $ newEvent
   (focusChangeEvent, focusChangeHandler) <- liftIO $ newEvent
-  (modifyMergeTrieEvent, modifyMergeTrieHandler) <- liftIO $ newEvent
   (popupEvent, popupHandler) <- liftIO $ newEvent
 
 
@@ -271,44 +248,19 @@ setup localstate store root = void $ do
   modalRoot <- UI.div -- not infra because often invisible, infra controls display
 
 
-  let popError :: NonEmpty MergeError -> UI ()
-      popError e = liftIO $ popupHandler $ SpawnError $ show e
+  -- TODO: too useful to nuke (also, it's v. cool - windows-look UI and everything)
+  let _popError :: NonEmpty MergeError -> UI ()
+      _popError e = liftIO $ popupHandler $ Modal.SpawnError $ show e
 
-  let extractFT :: M x 'SnapshotT -> x 'FileTree
-      extractFT (Snapshot ft _ _) = ft
-
-
-  -- errors on key not found - not sure how to handle this, need
-  -- generic 'shit broke' error channel, eg popup/alert
-  -- TODO: need to run everything in exceptT so I can pop an error when shit like this happens
-  let getCurrentBranch :: STM (BranchFocus, LMMT UI 'CommitT)
-      getCurrentBranch = do
-        bs <- readTVar branchState
-        let focus = bsFocus bs
-        case focus of
-          MainBranch -> pure $ (focus, bsMainBranch bs)
-          OtherBranch b -> maybe undefined (pure . (focus,)) $ lookup b (bsBranches bs)
-
-  let redrawSidebar bs mipc = void $ do
+  let redrawSidebar bs = void $ do
         _ <- element sidebarRoot # set children []
         element sidebarRoot #+ [ UI.div # withClass ["placeholder"]
-                               , branchBrowser commitSnapshotIndex blobStore popupHandler bs focusChangeHandler updateBranchStateHandler
+                               , branchBrowser commitSnapshotIndex store popupHandler bs focusChangeHandler updateBranchStateHandler
                                ]
-
-  let handleErr m = do
-        x <- runExceptT m
-        case x of
-          Right () -> pure ()
-          Left e   -> popError e
-
-      handleMMTE _ = handleErr $ pure ()
 
 
   -- discarded return value deregisters handler
   _ <- onEvent popupEvent (Modal.handleSpawnPopup modalRoot)
-
-  -- discarded return value deregisters handler
-  _ <- onEvent modifyMergeTrieEvent handleMMTE
 
   browserRoot <- faUl
   -- discarded return value deregisters handler
@@ -318,28 +270,26 @@ setup localstate store root = void $ do
     pure ()
 
 
-  liftIO $ focusChangeHandler $ wrapFocus sing initCommit
+  liftIO $ focusChangeHandler $ wrapFocus sing (bsFocusedCommit initialBranchState)
 
   _ <- onEvent updateBranchStateEvent $ \ubs -> do
     bs' <- case ubs of
-      ChangeFocus f -> do
+      focus -> do
         liftIO $ putStrLn "changefocus"
         liftIO $ atomically $ do
-          -- TODO: check in progress commit, if set -> error
           bs <- readTVar branchState
           -- TODO: error if focus not found in list of branches
-          let bs' = bs { bsFocus = f }
+          let bs' = bs { bsFocus = focus }
           writeTVar branchState bs'
           pure bs'
-      _ -> error "only changing focus now supported"
 
 
-    redrawSidebar bs' Nothing
+    redrawSidebar bs'
     pure ()
 
   bs <- liftIO $ atomically $ readTVar branchState
 
-  redrawSidebar bs Nothing
+  redrawSidebar bs
 
   void $ flex_p (getBody root)
                 [ (element sidebarRoot, flexGrow 1)

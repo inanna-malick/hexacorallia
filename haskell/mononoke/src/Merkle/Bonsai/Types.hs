@@ -161,10 +161,10 @@ instance ToJSON x => ToJSON (M (Const x) i) where
            ]
   toJSON (Blob s) = AE.String $ T.pack s
 
-
+-- TODO: round trip testing! apparent failure in this, "type" vs "tag" as tag type
 instance FromJSON x => FromJSON (M (Const x) 'FileTree) where
     parseJSON (AE.Object v) = do
-      typ :: T.Text <- v .: "type"
+      typ :: T.Text <- v .: "tag"
       case typ of
         "dir"  -> Dir  <$> v .: "contents"
         "file" -> File <$> v .: "contents"

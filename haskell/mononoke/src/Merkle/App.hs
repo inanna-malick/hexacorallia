@@ -71,6 +71,7 @@ executeCommand store (CreateCommit msg merges) = do
   liftIO $ putStrLn "commit complete"
   liftIO $ print changes
 executeCommand store ShowUncommitedChanges = do
+  -- TODO: why does this run PUT ops? must be the snapshot bit
   snapshotFT <- readLocalState >>= lsCurrentCommit >>= getOrMakeSnapshotFT store
   RootPath root <- rootPath
   diffs <- compareFilesystemToTree (pure root) snapshotFT

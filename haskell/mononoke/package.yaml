@@ -84,7 +84,6 @@ library:
     - Merkle.Bonsai.Types
     - Merkle.GUI.CSS
     - Merkle.GUI.Elements
-    - Merkle.GUI.Messages
     - Merkle.GUI.Modal
     - Merkle.GUI.State
     - Merkle.GUI.Core
