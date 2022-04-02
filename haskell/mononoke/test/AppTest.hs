@@ -84,6 +84,9 @@ testFT = Fix $ Dir' $ M.fromList [("a", a), ("b", b), ("c", c), ("d", d)]
 
 
 
+-- TODO: make this generic, such that it is also used in checking out new branches
+--       and imposing said state on the filesystem
+
 buildFT
   :: forall m
    . ( MonadIO m

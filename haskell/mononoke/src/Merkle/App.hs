@@ -66,7 +66,7 @@ executeCommand store (CreateCommit msg merges) = do
           liftIO $ print "commit complete"
           liftIO $ print changes
 executeCommand store ShowUncommitedChanges = do
-          snapshotFT <- getOrMakeSnapshotFT store
+          snapshotFT <- readLocalState >>= lsCurrentCommit >>= getOrMakeSnapshotFT store
           RootPath root <- rootPath
           diffs <- compareFilesystemToTree (pure root) snapshotFT
           liftIO $ print diffs

@@ -9,7 +9,8 @@ import           Data.List (isPrefixOf, isInfixOf)
 
 -- NOTE: operates on strings b/c mononoke merkle structure requires strings.
 --       Makes it easier for humans to read encoded objects, which is a core ergonomics goal
--- safe filesystem access
+-- safe filesystem access, with access enforced as being only against rootPath or children
+-- TODO: also verify that localstate file exists at rootPath?
 class MonadFileSystem m where
   writeDirSafe   :: FilePath -> m ()
   listDirSafe    :: FilePath -> m [FilePath]

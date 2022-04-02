@@ -7,6 +7,7 @@ module Merkle.App.LocalState where
 
 
 import           Merkle.App.Filesystem.Safe
+import           Merkle.App.Types (BranchName)
 import           Merkle.App.BackingStore (BackingStore(..))
 import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
 import           Merkle.Bonsai.MergeTrie
@@ -46,12 +47,20 @@ data LocalState
   } deriving (Ord, Eq, Show, Generic)
 
 
+lsBranchForCommit
+  :: MonadError String m
+  => BranchName
+  -> LocalState
+  -> m (Hash 'CommitT)
+lsBranchForCommit branchName ls = maybe (throwError "current branch does not exist in branches map") pure
+                 $ M.lookup branchName (branches ls)
+
+
 lsCurrentCommit
   :: MonadError String m
   => LocalState
   -> m (Hash 'CommitT)
-lsCurrentCommit ls = maybe (throwError "current branch does not exist in branches map") pure
-                 $ M.lookup (currentBranch ls) (branches ls)
+lsCurrentCommit ls = lsBranchForCommit (currentBranch ls) ls
 
 
 instance ToJSON LocalState where

@@ -36,9 +36,10 @@ getOrMakeSnapshotFT
      , MonadFileSystem m
      )
   => Store m
+  -> Hash 'CommitT
   -> m (Term (Lazy m M) 'FileTree)
-getOrMakeSnapshotFT store = do
-  snapshot <- getOrMakeSnapshot store
+getOrMakeSnapshotFT store commitHash = do
+  snapshot <- getOrMakeSnapshot store commitHash
   (HC (Tagged _ snapshot')) <- fetchLMMT snapshot
   let (Snapshot ft _ _) = snapshot'
   pure $ fromLMT ft
@@ -49,23 +50,22 @@ getOrMakeSnapshot
      , MonadFileSystem m
      )
   => Store m
+  -> Hash 'CommitT
   -> m (LMMT m 'SnapshotT)
-getOrMakeSnapshot store = do
+getOrMakeSnapshot store commitHash = do
   localState <- readLocalState
-  currentCommit <- lsCurrentCommit localState
-  case M.lookup currentCommit (snapshotMappings localState) of
+  case M.lookup commitHash (snapshotMappings localState) of
     Nothing -> do
-      lastCommit <- view #node $ unTerm $ lazyLoadHash store currentCommit
+      lastCommit <- view #node $ unTerm $ lazyLoadHash store commitHash
       let lastCommit' :: M (WIPT m) 'CommitT
             = hfmap (unmodifiedWIP . toLMT) lastCommit
-      -- why does makeSnapshot require IO?
       snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)
       snapshotWIP <- either (throwError . ("merge errors in history during commit op" ++) . show) pure snapshotEWIP
       snapshot <- uploadWIPT (sWrite store) $ modifiedWIP snapshotWIP
 
       let localState' =
             localState
-              { snapshotMappings = M.insert currentCommit (hashOfLMMT snapshot) (snapshotMappings localState)
+              { snapshotMappings = M.insert commitHash (hashOfLMMT snapshot) (snapshotMappings localState)
               }
       writeLocalState localState'
 
@@ -89,7 +89,7 @@ buildCommitFromFilesystemState store commitMsg = do
   -- TODO: monad state for localstate or something, only persist at end.. mb..
   localState <- readLocalState
   currentCommit <- lsCurrentCommit localState
-  ft <- getOrMakeSnapshotFT store
+  ft <- getOrMakeSnapshotFT store currentCommit
   RootPath root <- rootPath
   diffs <- compareFilesystemToTree (pure root) $ ft
   wipCommit <- case diffs of
@@ -208,3 +208,44 @@ compareFilesystemToTree root snapshot = processRoot snapshot
           contents <- readFileSafe absolutePath
           pure [Change path $ Add $ Term $ Blob contents]
         Nothing -> pure [] -- not a dir or a file, shrug emoji
+
+
+
+-- | TODO: move this out of this file?
+-- checkout
+--   :: forall m
+--    . ( MonadFileSystem m
+--      , MonadError String m
+--      )
+--   => Store m
+--   -> BranchName
+--   -> m ()
+-- checkout store branchName = do
+--   commitHash <- readLocalState >>= lsBranchForCommit branchName
+
+
+-- -- | TODO: outside of this, add a check that there are no extant diffs - that we are exactly on _some_ commit_.
+-- buildFT
+--   :: forall m
+--    . ( MonadIO m
+--      , MonadError String m
+--      )
+--   => NEL.NonEmpty Path
+--   -> FT
+--   -> m ()
+-- buildFT root ft = (cata f ft) []
+--   where
+--     concat path = concatPath $ maybe root (root <>) (NEL.nonEmpty path)
+
+--     f' path (pathSegment, action) =
+--       action $ path ++ [pathSegment]
+
+--     f :: FT' ([FilePath] -> m ()) -> ([FilePath] -> m ())
+--     f (Dir' xs) path = do
+--       liftIO $ D.createDirectory $ concat path
+--       mconcat <$> traverse (f' path) (M.toList xs)
+--     f (File' _) [] = -- throw if file entity at root dir
+--       throwError "file at root path of FT to build on filesystem"
+--     f (File' contents) path = do
+--       -- write FS state
+--       liftIO $ writeFile (concat path) contents
