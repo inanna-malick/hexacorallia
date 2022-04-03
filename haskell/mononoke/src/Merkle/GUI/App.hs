@@ -33,7 +33,7 @@ import           Merkle.GUI.Core
 import           Merkle.GUI.Elements
 import           Merkle.GUI.State
 import qualified Merkle.GUI.Modal as Modal
-import           Merkle.Generic.Merkle (fromLMT, toLMT, fetchLazy)
+import           Merkle.Generic.Merkle (fromLMT, toLMT, fetchLazy, fetchLazyT)
 import           Merkle.Generic.BlakeHash
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
@@ -94,23 +94,23 @@ parsePath s = do
     Just xs -> Just xs
 
 
-browseLMMT
+browseLazyTerm
   :: Handler (FocusLazy UI)
   -> TVar Minimizations
   -> FocusLazy UI
   -> UI Element
-browseLMMT focusHandler minimizations focus = case focus of
-    SnapshotF root -> (getConst $ hpara (uiLMMAlg focusHandler minimizations) root)
-    FileTreeF root -> (getConst $ hpara (uiLMMAlg focusHandler minimizations) root)
-    CommitF   root -> (getConst $ hpara (uiLMMAlg focusHandler minimizations) root)
-    BlobF     root -> (getConst $ hpara (uiLMMAlg focusHandler minimizations) root)
+browseLazyTerm focusHandler minimizations focus = case focus of
+    SnapshotF root -> (getConst $ hpara (browseLazy focusHandler minimizations) root)
+    FileTreeF root -> (getConst $ hpara (browseLazy focusHandler minimizations) root)
+    CommitF   root -> (getConst $ hpara (browseLazy focusHandler minimizations) root)
+    BlobF     root -> (getConst $ hpara (browseLazy focusHandler minimizations) root)
 
 
-uiLMMAlg
+browseLazy
   :: Handler (FocusLazy UI)
   -> TVar Minimizations
   -> RAlg (Lazy UI) (Const (UI Element))
-uiLMMAlg focusHandler minimizations lazy = Const $ do
+browseLazy focusHandler minimizations lazy = Const $ do
       m <-  fetchLazy lazy
       let action = liftIO $ focusHandler $ wrapFocus sing $ Term $ hfmap _tag lazy
       getConst $ browseMononoke minimizations action ["persisted"] $ hfmap _elem m
@@ -200,32 +200,19 @@ updateSnapshotIndexLMMT
   -> Index m
   -> Term (Lazy m) 'CommitT
   -> ExceptT (NonEmpty MergeError) m (Term (Lazy m) 'SnapshotT)
-updateSnapshotIndexLMMT store index commit'' = do
-  let commit = toLMT commit''
-  msnap <- lift $ (iRead index) (unTerm commit'' ^. #hash)
-  -- commit' <- unTerm commit'' ^. #node
-  (HC (Tagged _ commit')) <- lift $ fetchLMMT commit
+updateSnapshotIndexLMMT store index lazyCommitT = do
+  msnap <- lift $ (iRead index) (unTerm lazyCommitT ^. #hash)
+  localCommit <- lift $ fetchLazyT lazyCommitT
   case msnap of
     Just h  -> do
       pure $ fromLMT $ expandHash (sRead store) h
     Nothing -> do
-      snap <- makeSnapshot (hfmap unmodifiedWIP commit') (iRead index) (sRead store)
+      snap <- makeSnapshot (hfmap unmodifiedWIP $ hfmap toLMT $ localCommit ^. #node) (iRead index) (sRead store)
       let wipt = modifiedWIP snap
       -- NOTE: this is the only place that writes occur
       uploadedSnap <- lift $ uploadWIPT (sWrite store) wipt
-      lift $ (iWrite index) (hashOfLMMT commit) (hashOfLMMT uploadedSnap)
+      lift $ (iWrite index) (localCommit ^. #hash) (hashOfLMMT uploadedSnap)
       pure $ fromLMT uploadedSnap
-
-
-updateSnapshotIndexWIPT
-  :: MonadIO m
-  => StoreRead m
-  -> IndexRead m
-  -> WIPT m 'CommitT
-  -> ExceptT (NonEmpty MergeError) m (M (WIPT m) 'SnapshotT)
-updateSnapshotIndexWIPT store index commit = do
-  (HC (Tagged _ commit')) <- lift $ fetchWIPT commit
-  makeSnapshot commit' index store
 
 
 setup :: LocalState -> Store UI -> Window -> UI ()
@@ -275,7 +262,7 @@ setup localstate store root = void $ do
   -- discarded return value deregisters handler
   _ <- onEvent focusChangeEvent $ \focus -> do
     void $ element browserRoot # set children []
-    void $ element browserRoot #+ [browseLMMT focusChangeHandler minimizations focus]
+    void $ element browserRoot #+ [browseLazyTerm focusChangeHandler minimizations focus]
     pure ()
 
 
