@@ -22,7 +22,7 @@ import Optics
 -- | Remotely persisted node in a merkle Tree
 data Lazy m f g i
   = Lazy
-  { hash  :: Hash i
+  { hash :: Hash i
   , node :: m (f g i)
   }
 

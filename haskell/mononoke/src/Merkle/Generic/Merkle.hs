@@ -12,6 +12,7 @@ module Merkle.Generic.Merkle
   , toLMT, fromLMT
   , wipToPartialUpdate, wipTreeToPartialUpdateTree
   , partialUpdateToWIP, partialUpdateTreeToWIPT
+  , fetchLazyT, fetchLazy
   )
   where
 
@@ -27,6 +28,22 @@ import Optics
 
 
 
+
+fetchLazyT
+  :: forall f m
+   . Monad m
+  => NatM m (Term (Lazy m f))
+            (Local f (Term (Lazy m f)))
+fetchLazyT (Term lazy) = fetchLazy lazy
+
+fetchLazy
+  :: forall f m x
+   . Monad m
+  => NatM m (Lazy m f x)
+            (Local f x)
+fetchLazy lazy = do
+  inner <- lazy ^. #node
+  pure $ Local (lazy ^. #hash) inner
 
 
 

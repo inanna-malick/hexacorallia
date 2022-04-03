@@ -33,9 +33,11 @@ import           Merkle.GUI.Core
 import           Merkle.GUI.Elements
 import           Merkle.GUI.State
 import qualified Merkle.GUI.Modal as Modal
+import           Merkle.Generic.Merkle (fromLMT, toLMT, fetchLazy)
 import           Merkle.Generic.BlakeHash
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
+import Optics ((^.), view)
 
 type Minimizations = Set RawBlakeHash
 
@@ -45,7 +47,7 @@ branchBrowser
   -> Store UI
   -> Handler (Modal.SpawnPopup UI)
   -> BranchState UI
-  -> Handler (FocusLMMT UI)
+  -> Handler (FocusLazy UI)
   -> Handler BranchFocus
   -> UI Element
 branchBrowser commitSnapshotIndex store _popRequest bs focusChangeHandler updateBranchStateHandler = do
@@ -53,10 +55,11 @@ branchBrowser commitSnapshotIndex store _popRequest bs focusChangeHandler update
     faUl #+ (fmap drawBranch $ [(MainBranch, bsMainBranch bs)] ++ extraBranches)
 
   where
-    drawBranch (f, commit) = do
-      esnap <- runExceptT $ updateSnapshotIndexLMMT store commitSnapshotIndex commit
+    drawBranch (f, commit'') = do
+      let commit = toLMT commit''
+      esnap <- runExceptT $ updateSnapshotIndexLMMT store commitSnapshotIndex commit''
 
-      let commit' = faLi focusChangeHandler commit [] (string "commit: ") UI.div
+      let commit' = faLi focusChangeHandler commit'' [] (string "commit: ") UI.div
           snap'   = case esnap of
             Right snap -> faLi focusChangeHandler snap [] (string "snap: ") UI.div
             Left e ->     string $ "unable to construct snapshot: " ++ show e
@@ -92,9 +95,9 @@ parsePath s = do
 
 
 browseLMMT
-  :: Handler (FocusLMMT UI)
+  :: Handler (FocusLazy UI)
   -> TVar Minimizations
-  -> FocusLMMT UI
+  -> FocusLazy UI
   -> UI Element
 browseLMMT focusHandler minimizations focus = case focus of
     SnapshotF root -> (getConst $ hpara (uiLMMAlg focusHandler minimizations) root)
@@ -104,12 +107,12 @@ browseLMMT focusHandler minimizations focus = case focus of
 
 
 uiLMMAlg
-  :: Handler (FocusLMMT UI)
+  :: Handler (FocusLazy UI)
   -> TVar Minimizations
-  -> RAlg (LMM UI) (Const (UI Element))
-uiLMMAlg focusHandler minimizations lmm = Const $ do
-      m <-  fetchLMM lmm
-      let action = liftIO $ focusHandler $ wrapFocus sing $  Term $ hfmap _tag lmm
+  -> RAlg (Lazy UI) (Const (UI Element))
+uiLMMAlg focusHandler minimizations lazy = Const $ do
+      m <-  fetchLazy lazy
+      let action = liftIO $ focusHandler $ wrapFocus sing $ Term $ hfmap _tag lazy
       getConst $ browseMononoke minimizations action ["persisted"] $ hfmap _elem m
 
 
@@ -119,15 +122,19 @@ browseMononoke
   => TVar Minimizations
   -> UI ()
   -> [String]
-  -> (Tagged Hash `HCompose` M) (Const (UI Element)) i
+  -> Local (Const (UI Element)) i
   -> (Const (UI Element)) i
-browseMononoke minimizations focusAction extraTags (HC (Tagged h m)) = Const $ do
+browseMononoke minimizations focusAction extraTags local = Const $ do
       content <- UI.div # withClass ([typeTagName' m] ++ extraTags) #+ [browseMononoke' m]
       faLi' @i (Just focusAction) [ ("fa-eye", toggleNode (getConst h) content)
                                   ]
                                   (string $ typeTagName' m) (pure content)
 
   where
+
+    h = local ^.  #hash
+    m = local ^. #node
+
     toggleNode :: RawBlakeHash -> Element -> UI ()
     toggleNode k node = void $ do
       isMinimized <- liftIO $ atomically $ do
@@ -191,21 +198,23 @@ updateSnapshotIndexLMMT
   :: MonadIO m
   => Store m
   -> Index m
-  -> LMMT m 'CommitT
-  -> ExceptT (NonEmpty MergeError) m (LMMT m 'SnapshotT)
-updateSnapshotIndexLMMT store index commit = do
-  msnap <- lift $ (iRead index) (hashOfLMMT commit)
+  -> Term (Lazy m) 'CommitT
+  -> ExceptT (NonEmpty MergeError) m (Term (Lazy m) 'SnapshotT)
+updateSnapshotIndexLMMT store index commit'' = do
+  let commit = toLMT commit''
+  msnap <- lift $ (iRead index) (unTerm commit'' ^. #hash)
+  -- commit' <- unTerm commit'' ^. #node
   (HC (Tagged _ commit')) <- lift $ fetchLMMT commit
   case msnap of
     Just h  -> do
-      pure $ expandHash (sRead store) h
+      pure $ fromLMT $ expandHash (sRead store) h
     Nothing -> do
       snap <- makeSnapshot (hfmap unmodifiedWIP commit') (iRead index) (sRead store)
       let wipt = modifiedWIP snap
       -- NOTE: this is the only place that writes occur
       uploadedSnap <- lift $ uploadWIPT (sWrite store) wipt
       lift $ (iWrite index) (hashOfLMMT commit) (hashOfLMMT uploadedSnap)
-      pure uploadedSnap
+      pure $ fromLMT uploadedSnap
 
 
 updateSnapshotIndexWIPT

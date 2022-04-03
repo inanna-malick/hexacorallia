@@ -8,25 +8,12 @@ module Merkle.App.LocalState where
 
 import           Merkle.App.Filesystem.Safe
 import           Merkle.App.Types (BranchName)
-import           Merkle.App.BackingStore (BackingStore(..))
 import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
-import           Merkle.Bonsai.MergeTrie
-import           Merkle.Generic.HRecursionSchemes
-import           Merkle.Generic.Merkle as M
-import           Merkle.Generic.DAGStore (mkGRPCClient, mkClient)
 
-import           System.Directory
-import qualified Data.Map.Merge.Strict as M
 import qualified Data.Map.Strict as M
 import           Control.Monad.Except
-import           Control.Monad.Error
-import           Data.List.NonEmpty (NonEmpty)
 import           Data.Aeson as AE
 import GHC.Generics
-
-import Optics
-import Options.Applicative
-import Data.Semigroup ((<>))
 
 import Data.ByteString.Lazy.UTF8 as BLU -- from utf8-string
 import Data.ByteString.UTF8 as BSU

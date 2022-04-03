@@ -12,6 +12,7 @@ import           Merkle.Bonsai.Types.Tags (typeTagName, typeTagFAIcon)
 import           Merkle.Bonsai.Types
 import           Merkle.GUI.Core
 --------------------------------------------
+import           Merkle.Generic.HRecursionSchemes
 
 
 faUl :: UI Element
@@ -79,8 +80,8 @@ faLi' mFocusAction onHoverButtons = faLiSimple [typeTagName $ sing @i] (typeTagF
 faLi
   :: forall (i :: MTag)
    . SingI i
-  => Handler (FocusLMMT UI)
-  -> LMMT UI i
+  => Handler (FocusLazy UI)
+  -> Term (Lazy UI) i
   -> [(String, UI ())] -- onHover
   -> UI Element
   -> UI Element

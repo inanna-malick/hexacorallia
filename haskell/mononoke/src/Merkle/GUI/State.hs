@@ -9,29 +9,33 @@ import qualified Data.Map as Map
 import           Merkle.App.LocalState
 import           Merkle.Bonsai.Types
 import           Merkle.GUI.Core
+import           Merkle.Generic.HRecursionSchemes
+import           Merkle.Generic.Merkle hiding (Lazy)
 --------------------------------------------
+import Optics
+
 
 -- TODO: expose error possibility instead of throwing error inline, partial function
 fromLocalState :: Monad m => Store m -> LocalState -> BranchState m
 fromLocalState store ls
   = BranchState
    -- FIXME: standardize repr, until then treat localstate current branch as main branch
-  { bsMainBranch = expandHash (sRead store) $ either error id $ lsCurrentCommit ls
-  , bsBranches = fmap (expandHash (sRead store)) <$> Map.toList (branches ls)
+  { bsMainBranch = fromLMT $ expandHash (sRead store) $ either error id $ lsCurrentCommit ls
+  , bsBranches = fmap (fromLMT . expandHash (sRead store)) <$> Map.toList (branches ls)
   , bsFocus = MainBranch
   }
 
 
 data BranchState m
   = BranchState
-  { bsMainBranch :: LMMT m 'CommitT
-  , bsBranches :: [(String, LMMT m 'CommitT)]
+  { bsMainBranch :: Term (Lazy m) 'CommitT
+  , bsBranches :: [(String, Term (Lazy m) 'CommitT)]
   , bsFocus :: BranchFocus
   }
 
 
 -- TODO: partial function, if branchstate is invalid
-bsFocusedCommit :: BranchState m -> LMMT m 'CommitT
+bsFocusedCommit :: BranchState m -> Term (Lazy m) 'CommitT
 bsFocusedCommit (BranchState main _ MainBranch) = main
 bsFocusedCommit (BranchState _ branchList (OtherBranch branch)) = maybe undefined id $ lookup branch branchList
 
@@ -40,9 +44,9 @@ bsFocusedCommit (BranchState _ branchList (OtherBranch branch)) = maybe undefine
 instance Show (BranchState m) where
   show BranchState{..} = mconcat
     [ "BranchState { main: \n"
-    , show $ hashOfLMMT bsMainBranch
+    , show $ unTerm bsMainBranch ^. #hash
     , "\n, branches: \n"
-    , show $ fmap (fmap hashOfLMMT) bsBranches
+    , show $ fmap (fmap ((^. #hash) . unTerm)) bsBranches
     , "\n, focus: \n"
     , show bsFocus
     ]

@@ -37,7 +37,7 @@ import           Merkle.Bonsai.Types.Tags
 import           Merkle.Generic.BlakeHash
 import qualified Merkle.Generic.DAGStore as DAG
 import qualified Merkle.Generic.Store as Generic
-import           Merkle.Generic.HRecursionSchemes as HR -- YOLO 420 SHINY AND CHROME
+import           Merkle.Generic.HRecursionSchemes as HR
 import qualified Merkle.Generic.Merkle as M
 --------------------------------------------
 
@@ -202,8 +202,7 @@ instance FromJSON x => FromJSON (M (Const x) 'BlobT) where
 
 
 
-
--- Lazy Merkle M
+-- Lazy Merkle M (old repr)
 type LMM m = Tagged Hash `HCompose` Compose m `HCompose` M
 type LMMT m = Term (LMM m)
 
@@ -448,6 +447,7 @@ mkDagStore
 mkDagStore = DAG.mkDagStore
 
 
+-- type aliases using the new, more elegant repr - will gradually phase it in
 type Lazy m = M.Lazy m M
 type Local = M.Local M
 type PartialUpdate m = M.PartialUpdate m M

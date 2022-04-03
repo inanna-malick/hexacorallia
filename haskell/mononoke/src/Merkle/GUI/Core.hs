@@ -6,6 +6,7 @@ module Merkle.GUI.Core where
 import           Data.Singletons
 --------------------------------------------
 import           Merkle.Bonsai.Types
+import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
 
 
@@ -16,7 +17,7 @@ data Focus x
   | CommitF   (x 'CommitT)
   | BlobF     (x 'BlobT)
 
-type FocusLMMT m = Focus (LMMT m)
+type FocusLazy m = Focus (Term (Lazy m))
 
 
 wrapFocus :: forall (i :: MTag) x. Sing i -> x i -> Focus x
