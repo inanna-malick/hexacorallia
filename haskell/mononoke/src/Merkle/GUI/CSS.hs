@@ -114,7 +114,6 @@ css = do
         borderWidth (px 2)
         borderColor black
 
-
         ".branch" & do
           color black
           backgroundColor turquoise

@@ -2,15 +2,11 @@
 {-# language ScopedTypeVariables        #-}
 
 
-
 module Merkle.App.Command where
-
 
 import           Merkle.App.BackingStore (BackingStore(..))
 import           Merkle.App.Types (Message, BranchName)
-
-
-import Options.Applicative
+import           Options.Applicative
 
 
 appCommand :: Parser (BackingStore, Command)

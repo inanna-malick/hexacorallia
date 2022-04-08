@@ -12,7 +12,7 @@ module Merkle.Generic.Merkle
   , toLMT, fromLMT
   , wipToPartialUpdate, wipTreeToPartialUpdateTree
   , partialUpdateToWIP, partialUpdateTreeToWIPT
-  , fetchLazyT, fetchLazy
+  , fetchLazyT, fetchLazy, lazyExpandHash
   )
   where
 
@@ -44,6 +44,12 @@ fetchLazy
 fetchLazy lazy = do
   inner <- lazy ^. #node
   pure $ Local (lazy ^. #hash) inner
+
+lazyExpandHash :: forall m f. HFunctor f => Monad m => NatM m Hash (f Hash) -> Hash :-> (Term (Lazy m f))
+lazyExpandHash fetch = ana f
+  where
+    f :: Coalg (Lazy m f) Hash
+    f h = Lazy h (fetch h)
 
 
 

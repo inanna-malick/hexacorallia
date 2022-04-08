@@ -43,7 +43,7 @@ main = hspec $ do
             RootPath testRoot <- rootPath
             buildFT (pure testRoot) toCreate
             initLocalState store
-            res <- buildCommitFromFilesystemState store "first commit"
+            res <- buildCommitFromFilesystemState store "first commit" []
             liftIO $ res `shouldBe` toExpect
 
 

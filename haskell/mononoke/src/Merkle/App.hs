@@ -66,8 +66,7 @@ executeCommand store StartGUI = do
 executeCommand store InitializeRepo = initLocalState store
 executeCommand store (CreateCommit msg merges) = do
   -- TODO: print changes
-  -- TODO: also accept merges <- TODO THIS ISN'T DONE YET
-  changes <- buildCommitFromFilesystemState store msg
+  changes <- buildCommitFromFilesystemState store msg merges
   liftIO $ putStrLn "commit complete"
   liftIO $ print changes
 executeCommand store ShowUncommitedChanges = do
@@ -86,8 +85,4 @@ executeCommand _store (DeleteBranch branchName) = do
   writeLocalState state'
 -- TODO: requires ability to impose a state on the current dir. can implement with new Filesytem.Safe
 executeCommand store (CheckoutBranch branchName) = undefined store branchName
-
-
-
-
 

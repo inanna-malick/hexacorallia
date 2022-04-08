@@ -10,13 +10,13 @@ import           Merkle.App.Filesystem.Safe
 import           Merkle.App.Types (BranchName)
 import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
 
-import qualified Data.Map.Strict as M
 import           Control.Monad.Except
+import           Data.ByteString.Lazy.UTF8 as BLU
+import           Data.ByteString.UTF8 as BSU
+import qualified Data.Map.Strict as M
 import           Data.Aeson as AE
-import GHC.Generics
+import           GHC.Generics
 
-import Data.ByteString.Lazy.UTF8 as BLU -- from utf8-string
-import Data.ByteString.UTF8 as BSU
 
 
 localStateName :: Path
@@ -34,13 +34,12 @@ data LocalState
   } deriving (Ord, Eq, Show, Generic)
 
 
--- NOTE: FIXME: reverse name
-lsBranchForCommit
+lsCommitForBranch
   :: MonadError String m
   => BranchName
   -> LocalState
   -> m (Hash 'CommitT)
-lsBranchForCommit branchName ls = maybe (throwError "current branch does not exist in branches map") pure
+lsCommitForBranch branchName ls = maybe (throwError "current branch does not exist in branches map") pure
                  $ M.lookup branchName (branches ls)
 
 
@@ -48,7 +47,7 @@ lsCurrentCommit
   :: MonadError String m
   => LocalState
   -> m (Hash 'CommitT)
-lsCurrentCommit ls = lsBranchForCommit (currentBranch ls) ls
+lsCurrentCommit ls = lsCommitForBranch (currentBranch ls) ls
 
 
 instance ToJSON LocalState where

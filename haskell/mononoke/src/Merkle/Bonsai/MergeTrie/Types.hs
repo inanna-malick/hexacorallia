@@ -11,25 +11,16 @@ module Merkle.Bonsai.MergeTrie.Types where
 
 
 --------------------------------------------
-import           Control.Concurrent.STM
-import           Control.Monad.Trans
-import           Control.Monad.Except
 import           Data.Default
-import qualified Data.Foldable as Foldable
 import           Data.Functor.Compose
 import qualified Data.Functor.Foldable as FF
-import           Data.Functor.Foldable (para, cata)
 import           Data.Fix (Fix(..))
-import           Data.List.NonEmpty (NonEmpty, toList, nonEmpty)
 import           Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
-import           Data.Map.Merge.Strict
 --------------------------------------------
 import           Merkle.Bonsai.Types
-import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
 import Optics hiding (Index)
-import Optics.TH
 
 
 -- | represents assertions from N snapshots

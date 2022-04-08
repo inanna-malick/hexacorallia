@@ -7,6 +7,7 @@ module Merkle.App.Filesystem where
 
 
 import           Merkle.App.Filesystem.Safe
+import           Merkle.App.Types (BranchName)
 import           Merkle.App.LocalState
 import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
 import           Merkle.Bonsai.MergeTrie
@@ -16,9 +17,8 @@ import           Merkle.Generic.Merkle as M
 import qualified Data.Map.Merge.Strict as M
 import qualified Data.Map.Strict as M
 import           Control.Monad.Except
-import           Data.List.NonEmpty (NonEmpty)
-
-import Optics
+import           Data.List.NonEmpty (NonEmpty((:|)))
+import           Optics
 
 
 
@@ -48,22 +48,58 @@ getOrMakeSnapshot store commitHash = do
   localState <- readLocalState
   case M.lookup commitHash (snapshotMappings localState) of
     Nothing -> do
-      lastCommit <- view #node $ unTerm $ lazyLoadHash store commitHash
-      let lastCommit' :: M (WIPT m) 'CommitT
-            = hfmap (unmodifiedWIP . toLMT) lastCommit
-      snapshotEWIP <- runExceptT $ makeSnapshot lastCommit' (iRead nullIndex) (sRead store)
-      snapshotWIP <- either (throwError . ("merge errors in history during commit op" ++) . show) pure snapshotEWIP
-      snapshot <- uploadWIPT (sWrite store) $ modifiedWIP snapshotWIP
+      commit <- view #node $ unTerm $ lazyLoadHash store commitHash
+      let commitWIP :: M (WIPT m) 'CommitT
+            = hfmap (unmodifiedWIP . toLMT) commit
+      snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
+
+      commitedSnapshot <- commitSnapshot store localState commitHash snapshotWIP
 
       let localState' =
             localState
-              { snapshotMappings = M.insert commitHash (hashOfLMMT snapshot) (snapshotMappings localState)
+              { snapshotMappings = M.insert commitHash (hashOfLMMT commitedSnapshot)
+                                                       (snapshotMappings localState)
               }
       writeLocalState localState'
 
-      pure $ snapshot
+      pure commitedSnapshot
     Just snapshotHash -> do
       pure $ toLMT $ lazyLoadHash store snapshotHash
+
+
+commitSnapshot
+  :: forall m
+   . ( MonadError String m
+     , MonadFileSystem m
+     )
+  => Store m
+  -> LocalState
+  -> Hash 'CommitT
+  -> M (WIPT m) 'SnapshotT
+  -> m (LMMT m 'SnapshotT)
+commitSnapshot store localState commitHash snapshotWIP = do
+  snapshot <- uploadWIPT (sWrite store) $ modifiedWIP snapshotWIP
+
+  let localState' =
+        localState
+          { snapshotMappings = M.insert commitHash (hashOfLMMT snapshot) (snapshotMappings localState)
+          }
+  writeLocalState localState'
+  pure snapshot
+
+
+
+-- writes snapshot to localstate index
+getOrMakeSnapshotWIPT
+  :: forall m
+   . ( MonadError String m
+     )
+  => Store m
+  -> M (WIPT m) 'CommitT
+  -> m (M (WIPT m) 'SnapshotT)
+getOrMakeSnapshotWIPT store commit = do
+      snapshotEWIP <- runExceptT $ makeSnapshot commit (iRead nullIndex) (sRead store)
+      either (throwError . ("merge errors while constructing snapshot" ++) . show) pure snapshotEWIP
 
 
 
@@ -76,28 +112,39 @@ buildCommitFromFilesystemState
      )
   => Store m
   -> String
+  -> [BranchName]
   -> m [Change (Term M)]
-buildCommitFromFilesystemState store commitMsg = do
-  -- TODO: monad state for localstate or something, only persist at end.. mb..
+buildCommitFromFilesystemState store commitMsg branchesToMerge = do
   localState <- readLocalState
   currentCommit <- lsCurrentCommit localState
   ft <- getOrMakeSnapshotFT store currentCommit
   RootPath root <- rootPath
   diffs <- compareFilesystemToTree (pure root) $ ft
-  wipCommit <- case diffs of
+  commitsToMerge <- let mkLazy = unmodifiedWIP . toLMT . lazyLoadHash store
+                        fetchBranch = fmap mkLazy . flip lsCommitForBranch localState
+                     in traverse fetchBranch branchesToMerge
+  commitWIP <- case diffs of
     [] -> throwError "attempted commit with no diffs"
     changes -> do
       let parent = toLMT $ lazyLoadHash store currentCommit
       let changes' = mapChange modifiedWIP' <$> changes
-      pure $ modifiedWIP $ Commit commitMsg changes' (pure $ unmodifiedWIP parent)
-  newCommitHash <- hashOfLMMT <$> uploadWIPT (sWrite store) wipCommit
+      pure $ Commit commitMsg changes' (unmodifiedWIP parent :| commitsToMerge)
 
-  localState <- readLocalState
-  -- TODO: optics, modify via fn, lol
-  let localState' = localState { branches =  M.insert (currentBranch localState) newCommitHash $ branches localState}
-  writeLocalState localState'
+  -- construct snapshot to ensure that new commit is valid before uploading it or updating local state
+  snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
+  -- after constructing valid snapshot, upload the commit
+  newCommitHash <- fmap hashOfLMMT . uploadWIPT (sWrite store) $ modifiedWIP commitWIP
+  -- now that we have an uploaded commit hash, write update local state
+  _commitedSnapshot <- commitSnapshot store localState newCommitHash snapshotWIP
 
-  -- NOTE: doesn't establish snapshot for new commit - should do so to confirm validity LMAO TODO
+
+  -- read localstate again b/c it's updated in the above, TODO: mk this transactional somehow, eg state monad
+  localState' <- readLocalState
+  -- TODO: optics, modify via fn
+  let localState'' = localState'
+                   { branches =  M.insert (currentBranch localState) newCommitHash $ branches localState
+                   }
+  writeLocalState localState''
 
   pure diffs
 
@@ -106,7 +153,6 @@ buildCommitFromFilesystemState store commitMsg = do
 compareFilesystemToTree
   :: forall m
    . ( MonadError String m
-     -- , MonadIO m
      , MonadFileSystem m
      )
   => NonEmpty Path -- not neccessarily root path, can run on subtree
@@ -213,7 +259,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
 --   -> BranchName
 --   -> m ()
 -- checkout store branchName = do
---   commitHash <- readLocalState >>= lsBranchForCommit branchName
+--   commitHash <- readLocalState >>= lsCommitForBranch branchName
 
 
 -- -- | TODO: outside of this, add a check that there are no extant diffs - that we are exactly on _some_ commit_.

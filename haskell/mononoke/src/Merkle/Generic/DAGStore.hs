@@ -28,29 +28,17 @@ module Merkle.Generic.DAGStore
   , Canonical.Id
   ) where
 
-import qualified Data.Aeson
-import           Data.Kind (Type)
-import           GHC.Generics
-import           Mu.Quasi.GRpc
-import           Mu.Schema hiding (Term(..))
 import           Mu.GRpc.Client.TyApps
-import qualified Data.ByteString as B
-import qualified Data.ByteString.Lazy as BL
 import           Data.Functor.Const (Const(..))
 import           Merkle.Generic.HRecursionSchemes
 import           Merkle.Generic.Store
-import           Data.Singletons.TH
-import           Data.Word
-import qualified Control.Monad.State as S
 import qualified Merkle.Generic.BlakeHash as BH;
 import qualified Merkle.Generic.CanonicalForm as Canonical;
 import           Merkle.Generic.CanonicalForm (CanonicalForm)
 import           Merkle.Generic.DAGStore.Types
-import           Data.Functor.Identity
-import           Data.Functor.Classes
-import           Data.ByteString.Builder as BB (word32LE, toLazyByteString)
 import           Control.Monad.Except
 import           Network.Socket (PortNumber)
+
 
 
 mkDagStore

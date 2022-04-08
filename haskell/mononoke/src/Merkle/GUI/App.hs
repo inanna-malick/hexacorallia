@@ -33,7 +33,7 @@ import           Merkle.GUI.Core
 import           Merkle.GUI.Elements
 import           Merkle.GUI.State
 import qualified Merkle.GUI.Modal as Modal
-import           Merkle.Generic.Merkle (fromLMT, toLMT, fetchLazy, fetchLazyT)
+import           Merkle.Generic.Merkle (fromLMT, toLMT, fetchLazy, fetchLazyT, lazyExpandHash)
 import           Merkle.Generic.BlakeHash
 import           Merkle.Generic.HRecursionSchemes
 --------------------------------------------
@@ -205,7 +205,7 @@ updateSnapshotIndexLMMT store index lazyCommitT = do
   localCommit <- lift $ fetchLazyT lazyCommitT
   case msnap of
     Just h  -> do
-      pure $ fromLMT $ expandHash (sRead store) h
+      pure $ lazyExpandHash (sRead store) h
     Nothing -> do
       snap <- makeSnapshot (hfmap unmodifiedWIP $ hfmap toLMT $ localCommit ^. #node) (iRead index) (sRead store)
       let wipt = modifiedWIP snap
