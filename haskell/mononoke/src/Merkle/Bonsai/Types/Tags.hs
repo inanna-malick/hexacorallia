@@ -18,7 +18,7 @@ import qualified Data.Text as T
 
 
 $(singletons [d|
-  data MTag = SnapshotT | FileTree | CommitT | BlobT
+  data MTag = SnapshotT | FileTree | CommitT | BlobT | RepoT
  |])
 
 
@@ -31,6 +31,7 @@ typeTagFAIcon s = case s of
   SFileTree  -> "fa-folder-open"
   SCommitT   -> "fa-history"
   SBlobT     -> "fa-file"
+  SRepoT      -> "fa-boxes-stacked"
 
 
 typeTagName' :: forall (i :: MTag) x. SingI i => x i -> String
@@ -42,4 +43,5 @@ typeTagName s = case s of
   SFileTree  -> "filetree"
   SCommitT   -> "commit"
   SBlobT     -> "blob"
+  SRepoT     -> "repo"
 

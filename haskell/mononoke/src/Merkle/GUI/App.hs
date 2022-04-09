@@ -36,7 +36,7 @@ import Merkle.Generic.BlakeHash
 import Merkle.Generic.HRecursionSchemes
 import Merkle.Generic.Merkle (fetchLazy, fetchLazyT, fromLMT, lazyExpandHash, toLMT)
 --------------------------------------------
-import Optics (view, (^.))
+import Optics ((^.))
 
 type Minimizations = Set RawBlakeHash
 
@@ -52,11 +52,10 @@ branchBrowser commitSnapshotIndex store _popRequest bs focusChangeHandler update
   let extraBranches = (\(f, c) -> (OtherBranch f, c)) <$> bsBranches bs
   faUl #+ (fmap drawBranch $ [(MainBranch, bsMainBranch bs)] ++ extraBranches)
   where
-    drawBranch (f, commit'') = do
-      let commit = toLMT commit''
-      esnap <- runExceptT $ updateSnapshotIndexLMMT store commitSnapshotIndex commit''
+    drawBranch (f, commit) = do
+      esnap <- runExceptT $ updateSnapshotIndexLazy store commitSnapshotIndex commit
 
-      let commit' = faLi focusChangeHandler commit'' [] (string "commit: ") UI.div
+      let commit' = faLi focusChangeHandler commit [] (string "commit: ") UI.div
           snap' = case esnap of
             Right snap -> faLi focusChangeHandler snap [] (string "snap: ") UI.div
             Left e -> string $ "unable to construct snapshot: " ++ show e
@@ -178,6 +177,13 @@ browseMononoke minimizations focusAction extraTags local = Const $ do
           ++ (renderChange <$> cs)
           ++ (faLiSimple' [] "fa-chevron-right" (string "parent") . getConst <$> toList ps)
     browseMononoke' (Blob c) = UI.string $ "\"" ++ c ++ "\""
+    browseMononoke' (Repo _branches _snapshotIndex _currentCommit) = string "TODO: render new repo state type"
+
+-- (faUl #+) $ [UI.string $ "branch:" ++ branchName]
+--           ++ [getConst ]
+--           ++ [renderBranch <$> Map.toList cs]
+--   let renderBranch (k, Const v) = faLiSimple' [] "fa-chevron-right" (string k) v
+-- renderIndex (Const k, Const v) = faLiSimple' [] "fa-chevron-right" "mapping:" $ k ++ v
 
 mononokeGUI :: LocalState -> Store UI -> IO ()
 mononokeGUI localstate store = do
@@ -185,13 +191,13 @@ mononokeGUI localstate store = do
   startGUI (defaultConfig {jsStatic = Just "/home/inanna/hexacorallia/haskell/mononoke/static"}) (setup localstate store)
 
 -- NOTE/TODO: this could all be in a single STM transaction. wild.
-updateSnapshotIndexLMMT ::
+updateSnapshotIndexLazy ::
   MonadIO m =>
   Store m ->
   Index m ->
   Term (Lazy m) 'CommitT ->
   ExceptT (NonEmpty MergeError) m (Term (Lazy m) 'SnapshotT)
-updateSnapshotIndexLMMT store index lazyCommitT = do
+updateSnapshotIndexLazy store index lazyCommitT = do
   msnap <- lift $ (iRead index) (unTerm lazyCommitT ^. #hash)
   localCommit <- lift $ fetchLazyT lazyCommitT
   case msnap of

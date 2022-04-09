@@ -19,6 +19,7 @@ module Merkle.Generic.Merkle
     fetchLazyT,
     fetchLazy,
     lazyExpandHash,
+    commitPartialUpdate,
   )
 where
 
@@ -53,7 +54,12 @@ fetchLazy lazy = do
   inner <- lazy ^. #node
   pure $ Local (lazy ^. #hash) inner
 
-lazyExpandHash :: forall m f. HFunctor f => Monad m => NatM m Hash (f Hash) -> Hash :-> (Term (Lazy m f))
+lazyExpandHash ::
+  forall m f.
+  HFunctor f =>
+  Monad m =>
+  NatM m Hash (f Hash) ->
+  Hash :-> (Term (Lazy m f))
 lazyExpandHash fetch = ana f
   where
     f :: Coalg (Lazy m f) Hash
@@ -70,6 +76,25 @@ toLM l = HC $ Tagged (l ^. #hash) $ HC $ Compose (l ^. #node)
 
 toLMT :: (Functor m, HFunctor f) => Term (Lazy m f) :-> LMT m f
 toLMT = hcata (Term . toLM)
+
+-- upload some partially updated structure, returning (for convenience) a lazy representation of same
+-- TODO: consider just returning a lazy expansion of the hash instead of storing in memory
+commitPartialUpdate ::
+  forall m f.
+  ( Monad m,
+    HTraversable f,
+    HFunctor f
+  ) =>
+  NatM m (f Hash) Hash ->
+  NatM m (Term (PartialUpdate m f)) (Term ((Lazy m f)))
+commitPartialUpdate upload = hcataM f
+  where
+    f :: AlgM m (PartialUpdate m f) (Term (Lazy m f))
+    f (OldStructure old) = pure old -- already uploaded lazy structure
+    f (NewStructure (Local _h l)) = do
+      -- TODO: compare local and remote hashes
+      h <- upload $ hfmap (view #hash . unTerm) l
+      pure $ Term $ Lazy h $ pure l
 
 -- Lazy Merkle M
 type LM m f = Tagged Hash `HCompose` Compose m `HCompose` f

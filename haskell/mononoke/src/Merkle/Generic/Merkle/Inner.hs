@@ -44,6 +44,13 @@ instance (Functor m, HFunctor f) => HFunctor (PartialUpdate m f) where
   hfmap f (NewStructure l) = NewStructure $ hfmap f l
   hfmap _ (OldStructure l) = OldStructure l
 
+instance (Monad m, HTraversable f) => HTraversable (PartialUpdate m f) where
+  hmapM nat (NewStructure (Local h l)) = NewStructure . Local h <$> hmapM nat l
+  hmapM _ (OldStructure l) = pure $ OldStructure l
+
+  htraverse nat (NewStructure (Local h l)) = NewStructure . Local h <$> htraverse nat l
+  htraverse _ (OldStructure l) = pure $ OldStructure l
+
 makeFieldLabelsFor [("hash", "hash"), ("node", "node")] ''Local
 makeFieldLabelsFor [("hash", "hash"), ("node", "node")] ''Lazy
 makeFieldLabelsFor [("new", "new"), ("old", "old")] ''PartialUpdate

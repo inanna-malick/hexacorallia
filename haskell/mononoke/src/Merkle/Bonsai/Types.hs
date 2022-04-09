@@ -122,7 +122,7 @@ data M a i where
   NullCommit ::
     M a 'CommitT
   Commit ::
-    String -> -- commit message (TODO text)
+    String -> -- commit message
     [Change a] -> -- list of inline changes
     NonEmpty (a 'CommitT) -> -- parent commits
     M a 'CommitT
@@ -130,6 +130,14 @@ data M a i where
   Blob ::
     String -> -- TODO: use bytestring, currently string to simplify experimentations
     M a 'BlobT
+  -- repo state:
+  -- NOTE: this should generally be written to the disk instead of a remote store, to avoid orphan instances
+  Repo ::
+    Map String (a 'CommitT) -> -- branch name to commit mappings
+    -- commit to snapshot mappings, using hash as key b/c it's janky otherwise
+    Map (Hash 'CommitT) (a 'SnapshotT) ->
+    String -> -- current branch name
+    M a 'RepoT
 
 instance ToJSON x => ToJSON (M (Const x) i) where
   toJSON (Snapshot ft oc ps) =
@@ -226,12 +234,7 @@ uploadWIPT ::
   Monad m =>
   NatM m (M Hash) Hash ->
   NatM m (WIPT m) (LMMT m)
-uploadWIPT _upload (Term (HC (L lmmt))) = pure lmmt
-uploadWIPT upload (Term (HC (R (HC (Tagged _h m))))) = do
-  lmmt <- hmapM (uploadWIPT upload) m
-  h' <- upload $ hfmap hashOfLMMT lmmt
-  -- TODO assert h == h'
-  pure $ Term $ HC $ Tagged h' $ HC $ Compose $ pure lmmt
+uploadWIPT upload = fmap M.toLMT . M.commitPartialUpdate upload . M.wipTreeToPartialUpdateTree
 
 fetchWIPT :: Applicative m => NatM m (WIPT m) ((Tagged Hash `HCompose` M) (WIPT m))
 fetchWIPT (Term (HC (L lmmt))) = hfmap unmodifiedWIP <$> fetchLMMT lmmt
@@ -311,6 +314,10 @@ instance HTraversable M where
           parents' <- traverse f parents
           pure $ Commit msg changes' parents'
   hmapM _ (Blob x) = pure $ Blob x
+  hmapM f (Repo branches snapshotIndex focus) = do
+    branches' <- traverse f branches
+    snapshotIndex' <- traverse f snapshotIndex
+    pure $ Repo branches' snapshotIndex' focus
 
   htraverse f (Snapshot tree orig parents) =
     Snapshot <$> f tree <*> f orig <*> traverse f parents
