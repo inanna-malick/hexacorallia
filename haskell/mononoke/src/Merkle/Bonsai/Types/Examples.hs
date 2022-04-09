@@ -1,9 +1,8 @@
 module Merkle.Bonsai.Types.Examples where
 
-
-import           Merkle.Bonsai.Types
-import           Merkle.Generic.HRecursionSchemes (Term, Cxt(Term))
-import           Data.List.NonEmpty (NonEmpty(..))
+import Data.List.NonEmpty (NonEmpty (..))
+import Merkle.Bonsai.Types
+import Merkle.Generic.HRecursionSchemes (Cxt (Term), Term)
 
 -- ++ /a/foo foo
 -- ++ /a/bar bar

@@ -1,50 +1,48 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# language ScopedTypeVariables        #-}
-
-
 
 module Merkle.App where
 
-
-import           Merkle.App.Filesystem.Safe (RootPath(..), MonadFileSystem(..))
-import           Merkle.App.Command
-import           Merkle.App.BackingStore
-import           Merkle.App.LocalState
-import           Merkle.App.Filesystem (getOrMakeSnapshotFT, buildCommitFromFilesystemState, compareFilesystemToTree)
-import           Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
-import           Merkle.Generic.Store (transformStore)
-
-import           System.Directory (getCurrentDirectory)
-import           Control.Monad.Except
-import           Control.Monad.Reader (runReaderT, ReaderT)
-
-import           Merkle.GUI.App (mononokeGUI)
-import Options.Applicative (execParser, info, fullDesc, progDesc, header)
+import Control.Monad.Except
+import Control.Monad.Reader (ReaderT, runReaderT)
+import Merkle.App.BackingStore
+import Merkle.App.Command
+import Merkle.App.Filesystem (buildCommitFromFilesystemState, compareFilesystemToTree, getOrMakeSnapshotFT)
+import Merkle.App.Filesystem.Safe (MonadFileSystem (..), RootPath (..))
+import Merkle.App.LocalState
+import Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
+import Merkle.GUI.App (mononokeGUI)
+import Merkle.Generic.Store (transformStore)
+import Options.Applicative (execParser, fullDesc, header, info, progDesc)
+import System.Directory (getCurrentDirectory)
 
 exec :: IO ()
 exec = do
-    (ctx, command) <- execParser opts
-    root <- RootPath <$> getCurrentDirectory
-    res <- liftIO $ flip runReaderT root $ runExceptT $ do
-      store <- buildStoreFromCtx ctx
-      executeCommand store command
-    print res
-
+  (ctx, command) <- execParser opts
+  root <- RootPath <$> getCurrentDirectory
+  res <- liftIO $
+    flip runReaderT root $
+      runExceptT $ do
+        store <- buildStoreFromCtx ctx
+        executeCommand store command
+  print res
   where
-    opts = info appCommand
-      ( fullDesc
-     <> progDesc "perform version control operations"
-     <> header "a bonsai version control system based on generic merkle graph utils" )
-
+    opts =
+      info
+        appCommand
+        ( fullDesc
+            <> progDesc "perform version control operations"
+            <> header "a bonsai version control system based on generic merkle graph utils"
+        )
 
 type CommandMonad = (ExceptT String (ReaderT RootPath IO))
 
 -- we need to run our store in UI, so pull out the error handling and RootPath monadreader and get it in just some MonadIO
-downcastStore
-  :: forall m
-   . MonadIO m
-  => Store CommandMonad
-  -> CommandMonad (Store m)
+downcastStore ::
+  forall m.
+  MonadIO m =>
+  Store CommandMonad ->
+  CommandMonad (Store m)
 downcastStore store = do
   r <- rootPath
 
@@ -54,11 +52,10 @@ downcastStore store = do
   -- TODO: note that it just nukes everything if there's an error, via 'fail' in IO
   pure $ transformStore f store
 
-
-executeCommand
-  :: Store CommandMonad
-  -> Command
-  -> CommandMonad ()
+executeCommand ::
+  Store CommandMonad ->
+  Command ->
+  CommandMonad ()
 executeCommand store StartGUI = do
   localstate <- readLocalState
   store' <- downcastStore store
@@ -80,9 +77,8 @@ executeCommand _store (CreateBranch branchName) = do
   state' <- createBranchLS branchName state
   writeLocalState state'
 executeCommand _store (DeleteBranch branchName) = do
-  state  <- readLocalState
+  state <- readLocalState
   state' <- either throwError pure $ delBranchLS branchName state
   writeLocalState state'
 -- TODO: requires ability to impose a state on the current dir. can implement with new Filesytem.Safe
 executeCommand store (CheckoutBranch branchName) = undefined store branchName
-

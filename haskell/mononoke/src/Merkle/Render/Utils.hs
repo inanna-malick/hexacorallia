@@ -10,10 +10,11 @@ module Merkle.Render.Utils where
 indent :: [[String]] -> [String]
 indent segments =
   let apply _ _ [] = []
-      apply f g (x:xs) = f x : fmap g xs
+      apply f g (x : xs) = f x : fmap g xs
       removeEmpty = filter (not . null)
-    in mconcat $ reverse $ apply
-         (apply ("└── " ++) ("    " ++))
-         (apply ("├── " ++) ("│   " ++))
-         (reverse $ removeEmpty segments)
-
+   in mconcat $
+        reverse $
+          apply
+            (apply ("└── " ++) ("    " ++))
+            (apply ("├── " ++) ("│   " ++))
+            (reverse $ removeEmpty segments)

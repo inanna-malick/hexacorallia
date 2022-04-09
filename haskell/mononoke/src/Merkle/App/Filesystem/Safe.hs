@@ -1,41 +1,37 @@
 module Merkle.App.Filesystem.Safe where
 
-import           Control.Monad.Except (MonadError, throwError)
-import           Control.Monad.Reader (ask, MonadReader)
-import           Control.Monad.IO.Class (MonadIO, liftIO)
-import           System.Directory
-import           Data.List (isPrefixOf, isInfixOf)
-
+import Control.Monad.Except (MonadError, throwError)
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Reader (MonadReader, ask)
+import Data.List (isInfixOf, isPrefixOf)
+import System.Directory
 
 -- NOTE: operates on strings b/c mononoke merkle structure requires strings.
 --       Makes it easier for humans to read encoded objects, which is a core ergonomics goal
 -- safe filesystem access, with access enforced as being only against rootPath or children
 -- TODO: also verify that localstate file exists at rootPath?
 class MonadFileSystem m where
-  writeDirSafe   :: FilePath -> m ()
-  listDirSafe    :: FilePath -> m [FilePath]
-  writeFileSafe  :: FilePath -> String -> m ()
-  readFileSafe   :: FilePath  -> m String
+  writeDirSafe :: FilePath -> m ()
+  listDirSafe :: FilePath -> m [FilePath]
+  writeFileSafe :: FilePath -> String -> m ()
+  readFileSafe :: FilePath -> m String
   entityTypeSafe :: FilePath -> m (Maybe FSEntityType)
-  rootPath       :: m RootPath
+  rootPath :: m RootPath
 
 data FSEntityType = FileEntity | DirEntity
 
 data RootPath = RootPath FilePath
 
 -- validation only, does not attempt to normalize. the allowed root must be an exact prefix and no '..' can be present
-validatePath
-  :: (MonadError String m, MonadReader RootPath m)
-  => FilePath -- path to validate
-  -> m ()
+validatePath ::
+  (MonadError String m, MonadReader RootPath m) =>
+  FilePath -> -- path to validate
+  m ()
 validatePath path = do
   (RootPath root) <- ask
   if (root `isPrefixOf` path) then pure () else throwError (mconcat ["root ", root, " is not a prefix of ", path])
   if (".." `isInfixOf` path) then throwError (mconcat [path, " contains illegal '..' sequence"]) else pure ()
   pure ()
-
-
-
 
 instance (MonadReader RootPath m, MonadError String m, MonadIO m) => MonadFileSystem m where
   rootPath = ask
