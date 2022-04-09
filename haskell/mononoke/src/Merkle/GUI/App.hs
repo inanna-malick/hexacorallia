@@ -34,7 +34,7 @@ import qualified Merkle.GUI.Modal as Modal
 import Merkle.GUI.State
 import Merkle.Generic.BlakeHash
 import Merkle.Generic.HRecursionSchemes
-import Merkle.Generic.Merkle (fetchLazy, fetchLazyT, fromLMT, lazyExpandHash, toLMT)
+import Merkle.Generic.Merkle (fetchLazy, fetchLazyT, lazyExpandHash, oldStructure, newStructure, commitPartialUpdate)
 --------------------------------------------
 import Optics ((^.))
 
@@ -204,12 +204,12 @@ updateSnapshotIndexLazy store index lazyCommitT = do
     Just h -> do
       pure $ lazyExpandHash (sRead store) h
     Nothing -> do
-      snap <- makeSnapshot (hfmap unmodifiedWIP $ hfmap toLMT $ localCommit ^. #node) (iRead index) (sRead store)
-      let wipt = modifiedWIP snap
+      snap <- makeSnapshot (hfmap oldStructure $ localCommit ^. #node) (iRead index) (sRead store)
+      let wipt = newStructure snap
       -- NOTE: this is the only place that writes occur
-      uploadedSnap <- lift $ uploadWIPT (sWrite store) wipt
-      lift $ (iWrite index) (localCommit ^. #hash) (hashOfLMMT uploadedSnap)
-      pure $ fromLMT uploadedSnap
+      uploadedSnap <- lift $ commitPartialUpdate (sWrite store) wipt
+      lift $ (iWrite index) (localCommit ^. #hash) (unTerm uploadedSnap ^. #hash)
+      pure uploadedSnap
 
 setup :: LocalState -> Store UI -> Window -> UI ()
 setup localstate store root = void $ do

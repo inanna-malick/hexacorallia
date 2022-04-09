@@ -18,6 +18,7 @@ import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 --------------------------------------------
 import Merkle.Bonsai.Types
+import Merkle.Generic.HRecursionSchemes
 --------------------------------------------
 import Optics hiding (Index)
 
@@ -29,10 +30,10 @@ data SnapshotTrie m a = SnapshotTrie
     stFilesAtPath ::
       Map
         (Hash 'FileTree)
-        (WIPT m 'FileTree, SnapshotFile (WIPT m)),
+        (Term (PartialUpdate m) 'FileTree, SnapshotFile (Term (PartialUpdate m))),
     -- | a map of child entities, if any, each either a recursion
     --   or a pointer to some uncontested extant file tree entity
-    stChildren :: Map Path ((WIPT m 'FileTree) `Either` a)
+    stChildren :: Map Path (Term (PartialUpdate m) 'FileTree `Either` a)
   }
   deriving (Functor, Foldable, Traversable)
 
@@ -42,7 +43,8 @@ data MergeTrie m a = MergeTrie
   { -- | Trie layer containing all assertions from snapshots
     mtSnapshotTrie :: SnapshotTrie m a,
     -- | all changes at this path
-    mtChange :: Maybe (ChangeType (WIPT m)) -- only one change per path is valid (only LMMT-only field)
+    --   only one change per path is valid (only LMMT-only field) <- (???) what does this mean
+    mtChange :: Maybe (ChangeType (Term (PartialUpdate m)))
   }
   deriving (Functor, Foldable, Traversable)
 
@@ -51,12 +53,12 @@ makeFieldLabelsFor [("mtSnapshotTrie", "snapshotTrie"), ("mtChange", "change")] 
 
 mtChildren ::
   MergeTrie m a ->
-  Map Path ((WIPT m 'FileTree) `Either` a)
+  Map Path ((Term (PartialUpdate m) 'FileTree) `Either` a)
 mtChildren = view (#snapshotTrie % #children)
 
 mtFilesAtPath ::
   MergeTrie m a ->
-  Map (Hash 'FileTree) (WIPT m 'FileTree, SnapshotFile (WIPT m))
+  Map (Hash 'FileTree) (Term (PartialUpdate m) 'FileTree, SnapshotFile (Term (PartialUpdate m)))
 mtFilesAtPath = view (#snapshotTrie % #filesAtPath)
 
 -- will add cases to enum
@@ -100,7 +102,7 @@ data ApplyChangeError
 type RAlgebra f a = f (Fix f, a) -> a
 
 -- | helper function, constructs merge trie with change at path
-constructMT :: forall m. ChangeType (WIPT m) -> [Path] -> Fix (MergeTrie m)
+constructMT :: forall m. ChangeType (Term (PartialUpdate m)) -> [Path] -> Fix (MergeTrie m)
 constructMT change = FF.ana f
   where
     f :: [Path] -> MergeTrie m [Path]

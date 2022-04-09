@@ -40,7 +40,6 @@ library
   other-modules:
       Merkle.App.Command
       Merkle.Bonsai.MergeTrie.Index
-      Merkle.Bonsai.MergeTrie.Render
       Merkle.Bonsai.MergeTrie.Types
       Merkle.Bonsai.Types.Examples
       Merkle.Bonsai.Types.Render

@@ -86,22 +86,3 @@ renderLMMT = getConst . hcata f
 
 showLMMT :: SingI x => LMMT IO x -> IO ()
 showLMMT = (>>= const (pure ())) . (>>= traverse putStrLn) . renderLMMT
-
-renderWIPT :: forall m (x :: MTag). SingI x => WIPT m x -> [String]
-renderWIPT = getConst . hcata f
-  where
-    f :: Alg (WIP m) (Const [String])
-    f (HC (L lmmt)) =
-      let h = showHash $ hashOfLMMT lmmt
-       in Const [h]
-    f (HC (R (HC (Tagged _ m)))) = renderM m
-
-renderWIPTM :: forall m (x :: MTag). SingI x => Monad m => WIPT m x -> m [String]
-renderWIPTM = getConst . hcata f
-  where
-    f :: Alg (WIP m) (Const (m [String]))
-    f (HC (L lmmt)) = Const $ renderLMMT lmmt
-    f (HC (R (HC (Tagged _ m)))) = Const $ do
-      -- TODO: include hash in output
-      m' <- hmapM (\x -> Const <$> getConst x) m
-      pure $ getConst $ renderM m'

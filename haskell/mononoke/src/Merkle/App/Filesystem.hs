@@ -92,8 +92,9 @@ getOrMakeSnapshotWIPT ::
   M (WIPT m) 'CommitT ->
   m (M (WIPT m) 'SnapshotT)
 getOrMakeSnapshotWIPT store commit = do
-  snapshotEWIP <- runExceptT $ makeSnapshot commit (iRead nullIndex) (sRead store)
-  either (throwError . ("merge errors while constructing snapshot" ++) . show) pure snapshotEWIP
+  snapshotEWIP <- runExceptT $ makeSnapshot (hfmap wipTreeToPartialUpdateTree commit) (iRead nullIndex) (sRead store)
+  snapshot <- either (throwError . ("merge errors while constructing snapshot" ++) . show) pure snapshotEWIP
+  pure $ hfmap partialUpdateTreeToWIPT snapshot
 
 -- TODO: needs to be merge aware - maybe _just_ build WIPT?
 buildCommitFromFilesystemState ::

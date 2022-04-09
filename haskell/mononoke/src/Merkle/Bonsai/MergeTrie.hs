@@ -41,6 +41,7 @@ import qualified Data.Map.Strict as Map
 import Merkle.Bonsai.MergeTrie.Index
 import Merkle.Bonsai.MergeTrie.Types
 import Merkle.Bonsai.Types
+import Merkle.Generic.Merkle (partialUpdateHash, partialUpdateLayer, newStructure, oldStructure, lazyExpandHash)
 import Merkle.Generic.HRecursionSchemes
 --------------------------------------------
 import Optics hiding (Index)
@@ -49,9 +50,9 @@ import Optics.TH
 -- can then use other function to add commit to get snapshot
 resolveMergeTrie ::
   forall m.
-  WIPT m 'CommitT ->
+  Term (PartialUpdate m) 'CommitT ->
   Fix (MergeTrie m) ->
-  (NonEmpty MergeError) `Either` WIPT m 'FileTree
+  (NonEmpty MergeError) `Either` Term (PartialUpdate m) 'FileTree
 resolveMergeTrie wiptCommit mt = either (\e -> Left $ convertErrs $ cata f e []) Right x
   where
     x = resolveMergeTrie' wiptCommit mt
@@ -80,25 +81,25 @@ resolveMergeTrie wiptCommit mt = either (\e -> Left $ convertErrs $ cata f e [])
 -- can then use other function to add commit to get snapshot
 resolveMergeTrie' ::
   forall m.
-  WIPT m 'CommitT ->
+  Term (PartialUpdate m) 'CommitT ->
   Fix (MergeTrie m) ->
-  Fix (ErrorAnnotatedMergeTrie m) `Either` WIPT m 'FileTree
+  Fix (ErrorAnnotatedMergeTrie m) `Either` Term (PartialUpdate m) 'FileTree
 resolveMergeTrie' commit root = do
   mft <- para g root
   case mft of
-    Nothing -> pure $ modifiedWIP $ Dir Map.empty
+    Nothing -> pure $ newStructure $ Dir Map.empty
     Just x -> pure $ x
   where
-    g :: RAlgebra (MergeTrie m) (Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (WIPT m 'FileTree))
+    g :: RAlgebra (MergeTrie m) (Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (Term (PartialUpdate m) 'FileTree))
     g mt@MergeTrie {..} = do
       let liftMT ::
             ( Fix (MergeTrie m),
-              Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (WIPT m 'FileTree)
+              Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (Term (PartialUpdate m) 'FileTree)
             ) ->
             Fix (ErrorAnnotatedMergeTrie m)
           -- this assumes no nested further errors, I think I need to recurse here, or at least look at the snd arg of the input
           liftMT = Fix . Compose . Left . fst
-          liftErr' :: Maybe MergeErrorAtPath -> Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (WIPT m 'FileTree)
+          liftErr' :: Maybe MergeErrorAtPath -> Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (Term (PartialUpdate m) 'FileTree)
           liftErr' me = Left $ Fix $ Compose $ Right $ Compose (me, fmap (liftMT) mt)
           liftErr = liftErr' . Just
 
@@ -112,7 +113,7 @@ resolveMergeTrie' commit root = do
             Left _ ->
               let f ::
                     ( Fix (MergeTrie m),
-                      Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (WIPT m 'FileTree)
+                      Fix (ErrorAnnotatedMergeTrie m) `Either` Maybe (Term (PartialUpdate m) 'FileTree)
                     ) ->
                     Fix (ErrorAnnotatedMergeTrie m)
                   f (t, e) = either id (const $ liftMT (t, e)) e
@@ -131,13 +132,13 @@ resolveMergeTrie' commit root = do
         ([], Nothing, _ : _) ->
           -- TODO: more elegant matching statement for 'any nonempty'
           let children' = Map.fromList children -- no file or change but
-           in pure $ Just $ modifiedWIP $ Dir children' -- at least one child, retain
+           in pure $ Just $ newStructure $ Dir children' -- at least one child, retain
         ([], Just Del, _) -> liftErr DeleteAtNodeWithNoFile
         (fs, Just (Add blob), []) ->
           -- an add addressed to a node with any number of files - simple good state
           pure $
             Just $
-              modifiedWIP $
+              newStructure $
                 File $
                   SnapshotFile
                     blob
@@ -155,17 +156,17 @@ resolveMergeTrie' commit root = do
         -- one or more files, but with children, but files at this path are deleted so it's valid
         (_ : _, Just Del, _ : _) ->
           let children' = Map.fromList children
-           in pure $ Just $ modifiedWIP $ Dir children'
+           in pure $ Just $ newStructure $ Dir children'
 
 -- | build a snapshot for a commit, recursively descending
 --   into parent commits to build snapshots if neccessary
 makeSnapshot ::
   Monad m =>
   -- => MonadIO m -- TODO: monad logging for this exact case
-  M (WIPT m) 'CommitT -> -- can provide LMMT via 'unmodifiedWIP'
+  M (Term (PartialUpdate m)) 'CommitT -> -- can provide LMMT via 'oldStructure'
   IndexRead m -> -- index, will be always Nothing for initial WIP
   StoreRead m -> -- for expanding index reads
-  ExceptT (NonEmpty MergeError) m (M (WIPT m) 'SnapshotT)
+  ExceptT (NonEmpty MergeError) m (M (Term (PartialUpdate m)) 'SnapshotT)
 makeSnapshot commit index storeRead = do
   (snapshots, mt') <- case commit of
     Commit _msg changes parents -> makeMT changes parents index storeRead
@@ -176,8 +177,8 @@ makeSnapshot commit index storeRead = do
   --   let lines = renderMergeTrie mt'
   --   traverse (\s -> putStr "  " >> putStrLn s) lines
 
-  ft <- ExceptT $ pure $ resolveMergeTrie (modifiedWIP commit) mt'
-  let snap = Snapshot ft (modifiedWIP commit) snapshots
+  ft <- ExceptT $ pure $ resolveMergeTrie (newStructure commit) mt'
+  let snap = Snapshot ft (newStructure commit) snapshots
 
   -- liftIO $ do
   --   print $ "done processing commit: " ++ msg
@@ -194,11 +195,11 @@ makeSnapshot commit index storeRead = do
 makeMT ::
   Monad m =>
   -- => MonadIO m
-  [Change (WIPT m)] -> -- list of inline changes
-  NonEmpty (WIPT m 'CommitT) -> -- parent commits
+  [Change (Term (PartialUpdate m))] -> -- list of inline changes
+  NonEmpty (Term (PartialUpdate m) 'CommitT) -> -- parent commits
   IndexRead m -> -- index, will be always Nothing for initial WIP
   StoreRead m -> -- for expanding index reads
-  ExceptT (NonEmpty MergeError) m ([WIPT m 'SnapshotT], Fix (MergeTrie m))
+  ExceptT (NonEmpty MergeError) m ([Term (PartialUpdate m) 'SnapshotT], Fix (MergeTrie m))
 makeMT changes parents index storeRead = do
   -- lines <- renderLMMT commit
   -- liftIO $ do
@@ -209,17 +210,17 @@ makeMT changes parents index storeRead = do
       e = pure ([], def)
   (snapshots, mt) <- flip2 foldl e parents $ \mstate parentCommit -> do
     (snapshots, mt) <- mstate
-    lift (index (hashOfWIPT parentCommit)) >>= \case
+    lift (index (partialUpdateHash parentCommit)) >>= \case
       Just snap -> do
-        (HC (Tagged _ snap')) <- lift $ fetchLMMT $ expandHash storeRead snap
+        snap' <- lift $ unTerm (lazyExpandHash storeRead snap) ^. #node
         case snap' of
           Snapshot ft _ _ -> do
-            mt' <- lift $ buildMergeTrie mt (unmodifiedWIP ft)
-            let wipt' = unmodifiedWIP $ expandHash storeRead snap
+            mt' <- lift $ buildMergeTrie mt (oldStructure ft)
+            let wipt' = oldStructure $ lazyExpandHash storeRead snap
                 snapshots' = snapshots ++ [wipt']
             pure (snapshots', mt')
       Nothing -> do
-        (HC (Tagged _ parentCommit')) <- lift $ fetchWIPT parentCommit
+        parentCommit' <- lift $ partialUpdateLayer parentCommit
         snap <- makeSnapshot parentCommit' index storeRead
         let (Snapshot ft _ _) = snap
         mt' <- lift $ buildMergeTrie mt ft
@@ -227,7 +228,7 @@ makeMT changes parents index storeRead = do
         --   print "mergetrie:"
         --   let lines = renderMergeTrie mt'
         --   traverse (\s -> putStr "  " >> putStrLn s) lines
-        let wipt' = modifiedWIP snap
+        let wipt' = newStructure snap
             snapshots' = snapshots ++ [wipt']
         pure (snapshots', mt')
 
@@ -236,26 +237,26 @@ makeMT changes parents index storeRead = do
   pure (snapshots, mt')
 
 -- | fold a snapshot into a mergetrie
-buildMergeTrie :: forall m. Monad m => Fix (MergeTrie m) -> WIPT m 'FileTree -> m (Fix (MergeTrie m))
+buildMergeTrie :: forall m. Monad m => Fix (MergeTrie m) -> Term (PartialUpdate m) 'FileTree -> m (Fix (MergeTrie m))
 buildMergeTrie original = para f original
   where
     f ::
       MergeTrie
         m
         ( Fix (MergeTrie m),
-          WIPT m 'FileTree -> m (Fix (MergeTrie m))
+          Term (PartialUpdate m) 'FileTree -> m (Fix (MergeTrie m))
         ) ->
-      WIPT m 'FileTree ->
+      Term (PartialUpdate m) 'FileTree ->
       m (Fix (MergeTrie m))
     f mt wipt = do
-      HC (Tagged _hash m') <- fetchWIPT wipt
+      m' <- partialUpdateLayer wipt
       case m' of
         Dir children -> do
           let wiptOnly = traverseMissing $ \_ ft -> pure $ Left ft
               presentInBoth = zipWithAMatched $ \_ ft e -> case e of
                 Left ft' ->
                   -- two WIPT 'FileTree nodes, zip if different
-                  if (hashOfWIPT ft == hashOfWIPT ft')
+                  if (partialUpdateHash ft == partialUpdateHash ft')
                     then do
                       -- short circuit if hash (==)
                       pure $ Left ft'
@@ -277,7 +278,7 @@ buildMergeTrie original = para f original
 
           pure $ Fix mt'
         File sf -> do
-          let filesAtPath = Map.insert (hashOfWIPT wipt) (wipt, sf) (mtFilesAtPath mt)
+          let filesAtPath = Map.insert (partialUpdateHash wipt) (wipt, sf) (mtFilesAtPath mt)
 
           let children' = fmap fst <$> mtChildren mt
               mt' =
@@ -292,11 +293,11 @@ applyChanges ::
   forall m.
   Monad m =>
   Fix (MergeTrie m) ->
-  [Change (WIPT m)] -> -- could just be 'Change Hash'
+  [Change (Term (PartialUpdate m))] -> -- could just be 'Change Hash'
   ExceptT ApplyChangeError m (Fix (MergeTrie m))
 applyChanges mt changes = foldl f (pure mt) changes
   where
-    f :: ExceptT ApplyChangeError m (Fix (MergeTrie m)) -> Change (WIPT m) -> ExceptT ApplyChangeError m (Fix (MergeTrie m))
+    f :: ExceptT ApplyChangeError m (Fix (MergeTrie m)) -> Change (Term (PartialUpdate m)) -> ExceptT ApplyChangeError m (Fix (MergeTrie m))
     f mmt c = do
       mt' <- mmt
       applyChange mt' c
@@ -306,7 +307,7 @@ applyChange ::
   forall m.
   Monad m =>
   Fix (MergeTrie m) ->
-  Change (WIPT m) -> -- could just be 'Change Hash'
+  Change (Term (PartialUpdate m)) -> -- could just be 'Change Hash'
   ExceptT ApplyChangeError m (Fix (MergeTrie m))
 applyChange t c = para f t . toList $ _path c
   where
@@ -347,13 +348,13 @@ applyChange t c = para f t . toList $ _path c
 applyChangeH ::
   forall m.
   Monad m =>
-  WIPT m 'FileTree ->
+  Term (PartialUpdate m) 'FileTree ->
   [Path] ->
-  ChangeType (WIPT m) ->
+  ChangeType (Term (PartialUpdate m)) ->
   m (Fix (MergeTrie m))
-applyChangeH wipt fullPath ct = do
-  HC (Tagged _hash m') <- fetchWIPT wipt
-  case m' of
+applyChangeH localFileTree fullPath ct = do
+  localFileTree' <- partialUpdateLayer localFileTree
+  case localFileTree' of
     Dir children -> case fullPath of
       [] -> do
         -- port over dir structure
@@ -375,14 +376,14 @@ applyChangeH wipt fullPath ct = do
         pure $ Fix mt
     File sf -> case fullPath of
       [] -> do
-        let files = Map.singleton (hashOfWIPT wipt) (wipt, sf)
+        let files = Map.singleton (partialUpdateHash localFileTree) (localFileTree, sf)
             mt =
               def & #change .~ Just ct
                 & #snapshotTrie % #filesAtPath .~ files
         pure $ Fix mt
       (path : paths) -> do
         let children = Map.singleton path . Right $ constructMT ct paths
-            files = Map.singleton (hashOfWIPT wipt) (wipt, sf)
+            files = Map.singleton (partialUpdateHash localFileTree) (localFileTree, sf)
             mt =
               def & #snapshotTrie % #children .~ children
                 & #snapshotTrie % #filesAtPath .~ files

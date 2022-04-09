@@ -20,6 +20,9 @@ module Merkle.Generic.Merkle
     fetchLazy,
     lazyExpandHash,
     commitPartialUpdate,
+    partialUpdateHash,
+    partialUpdateLayer,
+    oldStructure, newStructure
   )
 where
 
@@ -53,6 +56,22 @@ fetchLazy ::
 fetchLazy lazy = do
   inner <- lazy ^. #node
   pure $ Local (lazy ^. #hash) inner
+
+
+
+
+
+partialUpdateHash ::
+   HFunctor f =>
+   (Term (PartialUpdate m f)) :-> Hash
+partialUpdateHash (Term (NewStructure (Local h _))) = h
+partialUpdateHash (Term (OldStructure (Term ((Lazy h _))))) = h
+
+partialUpdateLayer ::
+  (Monad m, HFunctor f) =>
+  NatM m (Term (PartialUpdate m f)) (f (Term (PartialUpdate m f)))
+partialUpdateLayer (Term (NewStructure (Local _h f))) = pure f
+partialUpdateLayer (Term (OldStructure (Term ((Lazy _h f))))) = hfmap (Term . OldStructure) <$> f
 
 lazyExpandHash ::
   forall m f.
@@ -129,6 +148,25 @@ wipTreeToPartialUpdateTree ::
   (Functor m, HFunctor f) =>
   WIPT m f :-> Term (PartialUpdate m f)
 wipTreeToPartialUpdateTree = hcata (Term . wipToPartialUpdate)
+
+
+
+oldStructure ::
+  Term (Lazy m f) :-> Term (PartialUpdate m f)
+oldStructure = Term . OldStructure
+
+
+newStructure ::
+  forall m f.
+  ( CanonicalForm f,
+    HTraversable f,
+    HFunctor f
+  ) =>
+  f (Term (PartialUpdate m f)) :-> Term (PartialUpdate m f)
+newStructure x = Term . NewStructure $ Local h x
+    where
+      h = canonicalHash $ hfmap partialUpdateHash x
+
 
 liftToLocalMerkle ::
   forall f.
