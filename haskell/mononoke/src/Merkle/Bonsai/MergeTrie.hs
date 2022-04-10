@@ -207,7 +207,7 @@ makeMT changes parents index storeRead = do
     (snapshots, mt) <- mstate
     lift (index (partialUpdateHash parentCommit)) >>= \case
       Just snap -> do
-        snap' <- lift $ unTerm (lazyExpandHash storeRead snap) ^. #node
+        snap' <- lift $ lazyExpandHash storeRead snap ^. #node
         case snap' of
           Snapshot ft _ _ -> do
             mt' <- lift $ buildMergeTrie mt (oldStructure ft)

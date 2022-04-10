@@ -19,7 +19,6 @@ module Merkle.Bonsai.Types
 where
 
 --------------------------------------------
-import Control.Concurrent.STM
 import Control.Monad.Except
 import Data.Aeson as AE
 import Data.Aeson.Types as AE
@@ -27,7 +26,6 @@ import qualified Data.ByteString.Lazy as LB
 import Data.Functor.Const (Const (..))
 import Data.List.NonEmpty (NonEmpty (..), intersperse)
 import Data.Map.Strict (Map)
-import qualified Data.Map.Strict as Map
 import Data.Singletons.TH
 import qualified Data.Text as T
 import GHC.Generics

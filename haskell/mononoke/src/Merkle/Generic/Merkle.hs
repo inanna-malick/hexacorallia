@@ -45,11 +45,8 @@ fetchLazy lazy = do
   inner <- lazy ^. #node
   pure $ Local (lazy ^. #hash) inner
 
-partialUpdateHash ::
-  HFunctor f =>
-  (Term (PartialUpdate m f)) :-> Hash
-partialUpdateHash (Term (NewStructure (Local h _))) = h
-partialUpdateHash (Term (OldStructure (Term ((Lazy h _))))) = h
+partialUpdateHash :: (Term (PartialUpdate m f)) :-> Hash
+partialUpdateHash x = x ^. #hash
 
 partialUpdateLayer ::
   (Monad m, HFunctor f) =>

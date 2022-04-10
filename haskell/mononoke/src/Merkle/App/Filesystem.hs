@@ -26,7 +26,7 @@ getOrMakeSnapshotFT ::
   m (Term (Lazy m) 'FileTree)
 getOrMakeSnapshotFT store commitHash = do
   snapshot <- getOrMakeSnapshot store commitHash
-  snapshot' <- unTerm snapshot ^. #node
+  snapshot' <- snapshot ^. #node
   let (Snapshot ft _ _) = snapshot'
   pure ft
 
@@ -42,7 +42,7 @@ getOrMakeSnapshot store commitHash = do
   localState <- readLocalState
   case M.lookup commitHash (snapshotMappings localState) of
     Nothing -> do
-      commit <- unTerm (lazyExpandHash (sRead store) commitHash) ^. #node
+      commit <- lazyExpandHash (sRead store) commitHash ^. #node
       let commitWIP :: M (Term (PartialUpdate m)) 'CommitT =
             hfmap (oldStructure) commit
       snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
@@ -54,7 +54,7 @@ getOrMakeSnapshot store commitHash = do
               { snapshotMappings =
                   M.insert
                     commitHash
-                    (unTerm commitedSnapshot ^. #hash)
+                    (commitedSnapshot ^. #hash)
                     (snapshotMappings localState)
               }
       writeLocalState localState'
@@ -78,7 +78,7 @@ commitSnapshot store localState commitHash snapshotWIP = do
 
   let localState' =
         localState
-          { snapshotMappings = M.insert commitHash (unTerm snapshot ^. #hash) (snapshotMappings localState)
+          { snapshotMappings = M.insert commitHash (snapshot ^. #hash) (snapshotMappings localState)
           }
   writeLocalState localState'
   pure snapshot
@@ -130,7 +130,7 @@ buildCommitFromFilesystemState store commitMsg branchesToMerge = do
   -- after constructing valid snapshot, upload the commit
   newCommit <- commitPartialUpdate (sWrite store) $ newStructure commitWIP
   -- now that we have an uploaded commit hash, write update local state
-  let newCommitHash = unTerm newCommit ^. #hash
+  let newCommitHash = newCommit ^. #hash
   _commitedSnapshot <- commitSnapshot store localState newCommitHash snapshotWIP
 
   -- read localstate again b/c it's updated in the above, TODO: mk this transactional somehow, eg state monad
@@ -164,7 +164,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
       contents <- listDirSafe' $ concatPath root
       let local = M.fromList $ fmap (\a -> (a, ())) contents
       remote <- do
-        m <- unTerm lmmt ^. #node
+        m <- lmmt ^. #node
         case m of
           File _ -> throwError "expected root path to be a dir in LMMT"
           Dir d -> pure d
@@ -181,7 +181,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
     bothPresent path () lmmt = do
       -- liftIO $ putStrLn "bothPresent"
       let absolutePath = concatPath $ root <> path
-      m <- unTerm lmmt ^. #node
+      m <- lmmt ^. #node
       case m of
         Dir remoteDirContents -> do
           entityTypeSafe absolutePath >>= \case
@@ -207,7 +207,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
           entityTypeSafe absolutePath >>= \case
             Just FileEntity -> do
               -- diff contents. potential optimization, hash local before blob fetch.
-              remoteBlob <- (unTerm $ sfBlob remoteContentsLMMT) ^. #node
+              remoteBlob <- sfBlob remoteContentsLMMT ^. #node
               let (Blob remoteContents) = remoteBlob
               localContents <- readFileSafe absolutePath
               case localContents == remoteContents of
@@ -221,7 +221,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
     localMissing :: NonEmpty Path -> Term (Lazy m) 'FileTree -> m [Change (Term M)]
     localMissing path lmmt = do
       -- liftIO $ putStrLn "localMissing"
-      m <- unTerm lmmt ^. #node
+      m <- lmmt ^. #node
       case m of
         Dir remoteDirContents -> do
           res <- traverse (uncurry $ localMissing . (path <>) . pure) $ M.toList remoteDirContents

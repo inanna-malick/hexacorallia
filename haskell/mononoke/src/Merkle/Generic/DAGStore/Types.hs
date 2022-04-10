@@ -1,49 +1,25 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE DuplicateRecordFields #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE NamedFieldPuns #-}
-{-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE PolyKinds #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE StandaloneKindSignatures #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE TypeOperators #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Merkle.Generic.DAGStore.Types where
 
-import Control.Monad.Except
-import qualified Control.Monad.State as S
-import qualified Data.Aeson
+-------------------------------------------
 import qualified Data.ByteString as B
-import Data.ByteString.Builder as BB (toLazyByteString, word32LE)
 import qualified Data.ByteString.Lazy as BL
-import Data.Functor.Classes
 import Data.Functor.Const (Const (..))
 import Data.Kind (Type)
-import Data.Singletons.TH
-import Data.Word
 import GHC.Generics
+-------------------------------------------
 import qualified Merkle.Generic.BlakeHash as BH
 import Merkle.Generic.CanonicalForm (CanonicalForm)
 import qualified Merkle.Generic.CanonicalForm as Canonical
 import Merkle.Generic.HRecursionSchemes
-import Merkle.Generic.Store
-import Mu.GRpc.Client.TyApps
 import Mu.Quasi.GRpc
 import Mu.Schema hiding (Term (..))
-import Network.Socket (PortNumber)
+
+-------------------------------------------
 
 grpc "GRPCStore" id "../../proto/dagstore.proto"
 
