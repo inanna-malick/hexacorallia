@@ -42,7 +42,7 @@ getOrMakeSnapshot store commitHash = do
   localState <- readLocalState
   case M.lookup commitHash (snapshotMappings localState) of
     Nothing -> do
-      commit <- unTerm (lazyLoadHash store commitHash) ^. #node
+      commit <- unTerm (lazyExpandHash (sRead store) commitHash) ^. #node
       let commitWIP :: M (Term (PartialUpdate m)) 'CommitT =
             hfmap (oldStructure) commit
       snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
@@ -61,7 +61,7 @@ getOrMakeSnapshot store commitHash = do
 
       pure commitedSnapshot
     Just snapshotHash -> do
-      pure $ lazyLoadHash store snapshotHash
+      pure $ lazyExpandHash (sRead store) snapshotHash
 
 commitSnapshot ::
   forall m.

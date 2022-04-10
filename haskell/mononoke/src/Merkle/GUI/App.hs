@@ -177,13 +177,6 @@ browseMononoke minimizations focusAction extraTags local = Const $ do
           ++ (renderChange <$> cs)
           ++ (faLiSimple' [] "fa-chevron-right" (string "parent") . getConst <$> toList ps)
     browseMononoke' (Blob c) = UI.string $ "\"" ++ c ++ "\""
-    browseMononoke' (Repo _branches _snapshotIndex _currentCommit) = string "TODO: render new repo state type"
-
--- (faUl #+) $ [UI.string $ "branch:" ++ branchName]
---           ++ [getConst ]
---           ++ [renderBranch <$> Map.toList cs]
---   let renderBranch (k, Const v) = faLiSimple' [] "fa-chevron-right" (string k) v
--- renderIndex (Const k, Const v) = faLiSimple' [] "fa-chevron-right" "mapping:" $ k ++ v
 
 mononokeGUI :: LocalState -> Store UI -> IO ()
 mononokeGUI localstate store = do

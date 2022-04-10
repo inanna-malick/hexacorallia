@@ -23,17 +23,6 @@ import Optics ((^.))
 
 -- | algebra, assumes all sub-entities have been rendered down to a list of lines
 renderM :: M (Const [String]) i -> Const [String] i
-renderM (Repo branches snapshotIndex currentBranch) =
-  let branches' = (\(k, v) -> [k ++ ": "] ++ getConst v) <$> Map.toList branches
-      snapshotIndex' = (\(k, v) -> [show (getConst k)] ++ [": "] ++ getConst v) <$> Map.toList snapshotIndex
-   in Const $
-        mconcat [["Repo State:"]]
-          ++ ( indent $
-                 [ ["current branch: ", currentBranch],
-                   ["branches:"] ++ indent branches',
-                   ["snapshot index:"] ++ indent snapshotIndex'
-                 ]
-             )
 renderM (Snapshot tree orig parents) =
   Const $
     mconcat [["Snapshot:"]]
