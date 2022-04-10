@@ -11,9 +11,10 @@ import Merkle.App.Filesystem.Safe
 import Merkle.App.LocalState
 import Merkle.App.Types (BranchName)
 import Merkle.Bonsai.MergeTrie
-import Merkle.Bonsai.Types hiding (Lazy, Local, PartialUpdate)
+import Merkle.Bonsai.Types
 import Merkle.Generic.HRecursionSchemes
-import Merkle.Generic.Merkle as M
+import qualified Merkle.Generic.Merkle as M
+import Merkle.Generic.Merkle (newStructure, newStructureT, oldStructure, commitPartialUpdate, lazyExpandHash, wipTreeToPartialUpdateTree)
 import Optics
 
 getOrMakeSnapshotFT ::
@@ -23,12 +24,12 @@ getOrMakeSnapshotFT ::
   ) =>
   Store m ->
   Hash 'CommitT ->
-  m (Term (Lazy m M) 'FileTree)
+  m (Term (Lazy m) 'FileTree)
 getOrMakeSnapshotFT store commitHash = do
   snapshot <- getOrMakeSnapshot store commitHash
-  (HC (Tagged _ snapshot')) <- fetchLMMT snapshot
+  snapshot' <- unTerm snapshot ^. #node
   let (Snapshot ft _ _) = snapshot'
-  pure $ fromLMT ft
+  pure ft
 
 getOrMakeSnapshot ::
   forall m.
@@ -37,14 +38,14 @@ getOrMakeSnapshot ::
   ) =>
   Store m ->
   Hash 'CommitT ->
-  m (LMMT m 'SnapshotT)
+  m (Term (Lazy m) 'SnapshotT)
 getOrMakeSnapshot store commitHash = do
   localState <- readLocalState
   case M.lookup commitHash (snapshotMappings localState) of
     Nothing -> do
-      commit <- view #node $ unTerm $ lazyLoadHash store commitHash
-      let commitWIP :: M (WIPT m) 'CommitT =
-            hfmap (unmodifiedWIP . toLMT) commit
+      commit <- unTerm (lazyLoadHash store commitHash) ^. #node
+      let commitWIP :: M (Term (PartialUpdate m)) 'CommitT =
+            hfmap (oldStructure ) commit
       snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
 
       commitedSnapshot <- commitSnapshot store localState commitHash snapshotWIP
@@ -54,14 +55,14 @@ getOrMakeSnapshot store commitHash = do
               { snapshotMappings =
                   M.insert
                     commitHash
-                    (hashOfLMMT commitedSnapshot)
+                    (unTerm commitedSnapshot ^. #hash)
                     (snapshotMappings localState)
               }
       writeLocalState localState'
 
       pure commitedSnapshot
     Just snapshotHash -> do
-      pure $ toLMT $ lazyLoadHash store snapshotHash
+      pure $ lazyLoadHash store snapshotHash
 
 commitSnapshot ::
   forall m.
@@ -71,14 +72,14 @@ commitSnapshot ::
   Store m ->
   LocalState ->
   Hash 'CommitT ->
-  M (WIPT m) 'SnapshotT ->
-  m (LMMT m 'SnapshotT)
+  M (Term (PartialUpdate m)) 'SnapshotT ->
+  m (Term (Lazy m) 'SnapshotT)
 commitSnapshot store localState commitHash snapshotWIP = do
-  snapshot <- uploadWIPT (sWrite store) $ modifiedWIP snapshotWIP
+  snapshot <- commitPartialUpdate (sWrite store) $ newStructure snapshotWIP
 
   let localState' =
         localState
-          { snapshotMappings = M.insert commitHash (hashOfLMMT snapshot) (snapshotMappings localState)
+          { snapshotMappings = M.insert commitHash (unTerm snapshot ^. #hash) (snapshotMappings localState)
           }
   writeLocalState localState'
   pure snapshot
@@ -89,14 +90,14 @@ getOrMakeSnapshotWIPT ::
   ( MonadError String m
   ) =>
   Store m ->
-  M (WIPT m) 'CommitT ->
-  m (M (WIPT m) 'SnapshotT)
+  M (Term (PartialUpdate m)) 'CommitT ->
+  m (M (Term (PartialUpdate m)) 'SnapshotT)
 getOrMakeSnapshotWIPT store commit = do
-  snapshotEWIP <- runExceptT $ makeSnapshot (hfmap wipTreeToPartialUpdateTree commit) (iRead nullIndex) (sRead store)
+  snapshotEWIP <- runExceptT $ makeSnapshot commit (iRead nullIndex) (sRead store)
   snapshot <- either (throwError . ("merge errors while constructing snapshot" ++) . show) pure snapshotEWIP
-  pure $ hfmap partialUpdateTreeToWIPT snapshot
+  pure snapshot
 
--- TODO: needs to be merge aware - maybe _just_ build WIPT?
+-- TODO: needs to be merge aware - maybe _just_ build partial update?
 buildCommitFromFilesystemState ::
   forall m.
   ( MonadError String m,
@@ -114,21 +115,23 @@ buildCommitFromFilesystemState store commitMsg branchesToMerge = do
   RootPath root <- rootPath
   diffs <- compareFilesystemToTree (pure root) $ ft
   commitsToMerge <-
-    let mkLazy = unmodifiedWIP . toLMT . lazyLoadHash store
+    let mkLazy = lazyExpandHash (sRead store)
         fetchBranch = fmap mkLazy . flip lsCommitForBranch localState
      in traverse fetchBranch branchesToMerge
   commitWIP <- case diffs of
-    [] -> throwError "attempted commit with no diffs"
+    [] -> throwError "attempted commit with no diffs" -- TODO: valid in nonconflicting merge case
     changes -> do
-      let parent = toLMT $ lazyLoadHash store currentCommit
-      let changes' = mapChange modifiedWIP' <$> changes
-      pure $ Commit commitMsg changes' (unmodifiedWIP parent :| commitsToMerge)
+      let parent :: Term (Lazy m) 'CommitT
+          parent = lazyExpandHash (sRead store) currentCommit
+      let changes' = mapChange newStructureT <$> changes
+      pure $ Commit commitMsg changes' (oldStructure parent :| fmap oldStructure commitsToMerge)
 
   -- construct snapshot to ensure that new commit is valid before uploading it or updating local state
   snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
   -- after constructing valid snapshot, upload the commit
-  newCommitHash <- fmap hashOfLMMT . uploadWIPT (sWrite store) $ modifiedWIP commitWIP
+  newCommit <- commitPartialUpdate (sWrite store) $ newStructure commitWIP
   -- now that we have an uploaded commit hash, write update local state
+  let newCommitHash = unTerm newCommit ^. #hash
   _commitedSnapshot <- commitSnapshot store localState newCommitHash snapshotWIP
 
   -- read localstate again b/c it's updated in the above, TODO: mk this transactional somehow, eg state monad
@@ -149,13 +152,13 @@ compareFilesystemToTree ::
     MonadFileSystem m
   ) =>
   NonEmpty Path -> -- not neccessarily root path, can run on subtree
-  Term (Lazy m M) 'FileTree ->
+  Term (Lazy m) 'FileTree ->
   m [Change (Term M)]
 compareFilesystemToTree root snapshot = processRoot snapshot
   where
     listDirSafe' :: Path -> m [Path]
     listDirSafe' x = filter (/= localStateName) <$> listDirSafe x
-    processRoot :: Term (Lazy m M) 'FileTree -> m [Change (Term M)]
+    processRoot :: Term (Lazy m) 'FileTree -> m [Change (Term M)]
     processRoot lmmt = do
       -- TODO: logging monad
       -- liftIO $ putStrLn "processRoot"
@@ -175,7 +178,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
           remote
 
     -- both paths present, file/dir conflict still possible
-    bothPresent :: NonEmpty Path -> () -> Term (Lazy m M) 'FileTree -> m [Change (Term M)]
+    bothPresent :: NonEmpty Path -> () -> Term (Lazy m) 'FileTree -> m [Change (Term M)]
     bothPresent path () lmmt = do
       -- liftIO $ putStrLn "bothPresent"
       let absolutePath = concatPath $ root <> path
@@ -216,7 +219,7 @@ compareFilesystemToTree root snapshot = processRoot snapshot
               localChanges <- mconcat <$> traverse (remoteMissing . (path <>) . pure) contents
               pure $ [Change path Del] ++ localChanges
             Nothing -> pure [] -- not a dir or a file, shrug emoji
-    localMissing :: NonEmpty Path -> Term (Lazy m M) 'FileTree -> m [Change (Term M)]
+    localMissing :: NonEmpty Path -> Term (Lazy m) 'FileTree -> m [Change (Term M)]
     localMissing path lmmt = do
       -- liftIO $ putStrLn "localMissing"
       m <- unTerm lmmt ^. #node

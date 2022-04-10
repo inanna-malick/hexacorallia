@@ -21,6 +21,8 @@ import Merkle.Generic.HRecursionSchemes
 
 --------------------------------------------
 
+-- TODO: reintroduce futu and etc? I guess
+
 fetchNode :: Store m f -> NatM m Hash (f Hash)
 fetchNode = sRead
 

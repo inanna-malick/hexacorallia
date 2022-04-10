@@ -22,7 +22,7 @@ module Merkle.Generic.Merkle
     commitPartialUpdate,
     partialUpdateHash,
     partialUpdateLayer,
-    oldStructure, newStructure
+    oldStructure, newStructure, newStructureT
   )
 where
 
@@ -154,6 +154,18 @@ wipTreeToPartialUpdateTree = hcata (Term . wipToPartialUpdate)
 oldStructure ::
   Term (Lazy m f) :-> Term (PartialUpdate m f)
 oldStructure = Term . OldStructure
+
+
+newStructureT ::
+  forall m f.
+  ( CanonicalForm f,
+    HTraversable f,
+    HFunctor f
+  ) =>
+  Term f :-> Term (PartialUpdate m f)
+newStructureT = hcata f
+    where
+      f x = Term $ NewStructure $ Local (canonicalHash $ hfmap partialUpdateHash x) x
 
 
 newStructure ::

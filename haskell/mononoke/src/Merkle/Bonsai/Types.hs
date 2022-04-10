@@ -236,10 +236,6 @@ uploadWIPT ::
   NatM m (WIPT m) (LMMT m)
 uploadWIPT upload = fmap M.toLMT . M.commitPartialUpdate upload . M.wipTreeToPartialUpdateTree
 
-fetchWIPT :: Applicative m => NatM m (WIPT m) ((Tagged Hash `HCompose` M) (WIPT m))
-fetchWIPT (Term (HC (L lmmt))) = hfmap unmodifiedWIP <$> fetchLMMT lmmt
-fetchWIPT (Term (HC (R hct))) = pure hct
-
 hashOfWIPT :: WIPT m :-> Hash
 hashOfWIPT (Term (HC (L lmmt))) = hashOfLMMT lmmt
 hashOfWIPT (Term (HC (R (HC (Tagged h _))))) = h
