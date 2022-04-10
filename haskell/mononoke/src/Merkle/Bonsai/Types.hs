@@ -209,68 +209,37 @@ instance FromJSON x => FromJSON (M (Const x) 'BlobT) where
       (AE.typeMismatch "String" invalid)
 
 -- Lazy Merkle M (old repr)
-type LMM m = Tagged Hash `HCompose` Compose m `HCompose` M
+-- type LMM m = Tagged Hash `HCompose` Compose m `HCompose` M
 
-type LMMT m = Term (LMM m)
+-- type LMMT m = Term (LMM m)
 
-fetchLMMT :: Functor m => NatM m (LMMT m) ((Tagged Hash `HCompose` M) (LMMT m))
-fetchLMMT (Term lmm) = fetchLMM lmm
+-- fetchLMMT :: Functor m => NatM m (LMMT m) ((Tagged Hash `HCompose` M) (LMMT m))
+-- fetchLMMT (Term lmm) = fetchLMM lmm
 
-fetchLMM :: Functor m => NatM m (LMM m x) ((Tagged Hash `HCompose` M) x)
-fetchLMM (HC (Tagged h (HC (Compose m)))) = HC . Tagged h <$> m
+-- fetchLMM :: Functor m => NatM m (LMM m x) ((Tagged Hash `HCompose` M) x)
+-- fetchLMM (HC (Tagged h (HC (Compose m)))) = HC . Tagged h <$> m
 
-flattenLMMT :: M (LMMT m) :-> M Hash
-flattenLMMT = hfmap hashOfLMMT
+-- flattenLMMT :: M (LMMT m) :-> M Hash
+-- flattenLMMT = hfmap hashOfLMMT
 
-hashOfLMMT :: LMMT m :-> Hash
-hashOfLMMT (Term (HC (Tagged h _))) = h
+-- hashOfLMMT :: LMMT m :-> Hash
+-- hashOfLMMT (Term (HC (Tagged h _))) = h
 
-type WIP m = HEither (LMMT m) `HCompose` Tagged Hash `HCompose` M
+-- type WIP m = HEither (LMMT m) `HCompose` Tagged Hash `HCompose` M
 
-type WIPT m = Term (WIP m)
+-- type WIPT m = Term (WIP m)
 
-uploadWIPT ::
-  forall m.
-  Monad m =>
-  NatM m (M Hash) Hash ->
-  NatM m (WIPT m) (LMMT m)
-uploadWIPT upload = fmap M.toLMT . M.commitPartialUpdate upload . M.wipTreeToPartialUpdateTree
-
-hashOfWIPT :: WIPT m :-> Hash
-hashOfWIPT (Term (HC (L lmmt))) = hashOfLMMT lmmt
-hashOfWIPT (Term (HC (R (HC (Tagged h _))))) = h
-
-unmodifiedWIP :: LMMT m :-> WIPT m
-unmodifiedWIP = Term . HC . L
-
-modifiedWIP :: M (WIPT m) :-> WIPT m
-modifiedWIP m = Term . HC . R . HC $ Tagged h m
-  where
-    h = DAG.canonicalHash $ hfmap hashOfWIPT m
-
-modifiedWIP' :: Term M :-> WIPT m
-modifiedWIP' m = hcata (Term . HC . R) $ hashMT m
+-- uploadWIPT ::
+--   forall m.
+--   Monad m =>
+--   NatM m (M Hash) Hash ->
+--   NatM m (WIPT m) (LMMT m)
+-- uploadWIPT upload = fmap M.toLMT . M.commitPartialUpdate upload . M.wipTreeToPartialUpdateTree
 
 showHash :: forall (i :: MTag). SingI i => Hash i -> String
 showHash h =
   let h' = take 6 $ T.unpack $ hashToText $ getConst h
    in "[" ++ typeTagName (sing :: Sing i) ++ ":" ++ h' ++ "]"
-
--- | hash and lift (TODO: THIS IS NEEDED - dip into merkle lib for refs)
-liftLMMT :: forall m. Applicative m => Term M :-> LMMT m
-liftLMMT = hcata f
-  where
-    f x = Term $ HC $ Tagged {_tag = h x, _elem = HC $ Compose $ pure x}
-    h x = DAG.canonicalHash $ hfmap hashOfLMMT x
-
-expandHash :: forall m. Monad m => StoreRead m -> Hash :-> (LMMT m)
-expandHash get = ana f
-  where
-    f :: Coalg (LMM m) Hash
-    f h = HC $ Tagged h $ HC $ Compose $ get h
-
-uploadM :: Monad m => StoreWrite m -> NatM m (Term M) Hash
-uploadM upload = hcataM upload
 
 instance HFunctor M where
   hfmap f (Snapshot tree orig parents) = Snapshot (f tree) (f orig) (fmap f parents)

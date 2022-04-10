@@ -13,8 +13,7 @@ import Merkle.App.Types (BranchName)
 import Merkle.Bonsai.MergeTrie
 import Merkle.Bonsai.Types
 import Merkle.Generic.HRecursionSchemes
-import qualified Merkle.Generic.Merkle as M
-import Merkle.Generic.Merkle (newStructure, newStructureT, oldStructure, commitPartialUpdate, lazyExpandHash, wipTreeToPartialUpdateTree)
+import Merkle.Generic.Merkle (commitPartialUpdate, lazyExpandHash, newStructure, newStructureT, oldStructure)
 import Optics
 
 getOrMakeSnapshotFT ::
@@ -45,7 +44,7 @@ getOrMakeSnapshot store commitHash = do
     Nothing -> do
       commit <- unTerm (lazyLoadHash store commitHash) ^. #node
       let commitWIP :: M (Term (PartialUpdate m)) 'CommitT =
-            hfmap (oldStructure ) commit
+            hfmap (oldStructure) commit
       snapshotWIP <- getOrMakeSnapshotWIPT store commitWIP
 
       commitedSnapshot <- commitSnapshot store localState commitHash snapshotWIP

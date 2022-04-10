@@ -10,32 +10,20 @@ module Merkle.Generic.Merkle
   ( Lazy (..),
     Local (..),
     PartialUpdate (OldStructure, NewStructure),
-    toLMT,
-    fromLMT,
-    wipToPartialUpdate,
-    wipTreeToPartialUpdateTree,
-    partialUpdateToWIP,
-    partialUpdateTreeToWIPT,
-    fetchLazyT,
-    fetchLazy,
-    lazyExpandHash,
-    commitPartialUpdate,
-    partialUpdateHash,
-    partialUpdateLayer,
-    oldStructure, newStructure, newStructureT
+    module Merkle.Generic.Merkle,
   )
 where
 
 --------------------------------------------
-import Data.Functor.Compose
---------------------------------------------
 
+--------------------------------------------
 import Merkle.Generic.BlakeHash
 import Merkle.Generic.CanonicalForm (CanonicalForm (..))
 import Merkle.Generic.HRecursionSchemes
 import Merkle.Generic.Merkle.Inner
---------------------------------------------
 import Optics
+
+--------------------------------------------
 
 fetchLazyT ::
   forall f m.
@@ -57,13 +45,9 @@ fetchLazy lazy = do
   inner <- lazy ^. #node
   pure $ Local (lazy ^. #hash) inner
 
-
-
-
-
 partialUpdateHash ::
-   HFunctor f =>
-   (Term (PartialUpdate m f)) :-> Hash
+  HFunctor f =>
+  (Term (PartialUpdate m f)) :-> Hash
 partialUpdateHash (Term (NewStructure (Local h _))) = h
 partialUpdateHash (Term (OldStructure (Term ((Lazy h _))))) = h
 
@@ -84,18 +68,6 @@ lazyExpandHash fetch = ana f
     f :: Coalg (Lazy m f) Hash
     f h = Lazy h (fetch h)
 
-fromLM :: LM m f x :-> Lazy m f x
-fromLM (HC (Tagged h (HC (Compose m)))) = Lazy h m
-
-fromLMT :: (Functor m, HFunctor f) => LMT m f :-> Term (Lazy m f)
-fromLMT = hcata (Term . fromLM)
-
-toLM :: Lazy m f x :-> LM m f x
-toLM l = HC $ Tagged (l ^. #hash) $ HC $ Compose (l ^. #node)
-
-toLMT :: (Functor m, HFunctor f) => Term (Lazy m f) :-> LMT m f
-toLMT = hcata (Term . toLM)
-
 -- upload some partially updated structure, returning (for convenience) a lazy representation of same
 -- TODO: consider just returning a lazy expansion of the hash instead of storing in memory
 commitPartialUpdate ::
@@ -115,46 +87,9 @@ commitPartialUpdate upload = hcataM f
       h <- upload $ hfmap (view #hash . unTerm) l
       pure $ Term $ Lazy h $ pure l
 
--- Lazy Merkle M
-type LM m f = Tagged Hash `HCompose` Compose m `HCompose` f
-
-type LMT m f = Term (LM m f)
-
-type WIP m f = HEither (LMT m f) `HCompose` Tagged Hash `HCompose` f
-
-type WIPT m f = Term (WIP m f)
-
-partialUpdateTreeToWIPT ::
-  (Functor m, HFunctor f) =>
-  Term (PartialUpdate m f) :-> WIPT m f
-partialUpdateTreeToWIPT = hcata (Term . partialUpdateToWIP)
-
-partialUpdateToWIP ::
-  (Functor m, HFunctor f) =>
-  PartialUpdate m f g :-> WIP m f g
-partialUpdateToWIP (OldStructure l) = HC $ L $ toLMT l
-partialUpdateToWIP (NewStructure l) = localLayerToWIP l
-
-localLayerToWIP :: Local f g :-> WIP m f g
-localLayerToWIP l = HC $ R $ HC $ Tagged (l ^. #hash) (l ^. #node)
-
-wipToPartialUpdate ::
-  (Functor m, HFunctor f) =>
-  WIP m f g :-> PartialUpdate m f g
-wipToPartialUpdate (HC (L lmt)) = OldStructure $ fromLMT lmt
-wipToPartialUpdate (HC (R (HC (Tagged h n)))) = NewStructure $ Local h n
-
-wipTreeToPartialUpdateTree ::
-  (Functor m, HFunctor f) =>
-  WIPT m f :-> Term (PartialUpdate m f)
-wipTreeToPartialUpdateTree = hcata (Term . wipToPartialUpdate)
-
-
-
 oldStructure ::
   Term (Lazy m f) :-> Term (PartialUpdate m f)
 oldStructure = Term . OldStructure
-
 
 newStructureT ::
   forall m f.
@@ -164,9 +99,8 @@ newStructureT ::
   ) =>
   Term f :-> Term (PartialUpdate m f)
 newStructureT = hcata f
-    where
-      f x = Term $ NewStructure $ Local (canonicalHash $ hfmap partialUpdateHash x) x
-
+  where
+    f x = Term $ NewStructure $ Local (canonicalHash $ hfmap partialUpdateHash x) x
 
 newStructure ::
   forall m f.
@@ -176,9 +110,8 @@ newStructure ::
   ) =>
   f (Term (PartialUpdate m f)) :-> Term (PartialUpdate m f)
 newStructure x = Term . NewStructure $ Local h x
-    where
-      h = canonicalHash $ hfmap partialUpdateHash x
-
+  where
+    h = canonicalHash $ hfmap partialUpdateHash x
 
 liftToLocalMerkle ::
   forall f.

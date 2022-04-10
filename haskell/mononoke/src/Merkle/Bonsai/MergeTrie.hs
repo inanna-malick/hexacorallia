@@ -23,29 +23,24 @@ module Merkle.Bonsai.MergeTrie
 where
 
 --------------------------------------------
-import Control.Concurrent.STM
 import Control.Monad.Except
-import Control.Monad.Trans
 import Data.Default
 import Data.Fix (Fix (..))
 import qualified Data.Foldable as Foldable
 import Data.Functor.Compose
 import Data.Functor.Foldable (cata, para)
-import qualified Data.Functor.Foldable as FF
 import Data.List.NonEmpty (NonEmpty, nonEmpty, toList)
 import Data.Map.Merge.Strict
-import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 --------------------------------------------
-
 import Merkle.Bonsai.MergeTrie.Index
 import Merkle.Bonsai.MergeTrie.Types
 import Merkle.Bonsai.Types
-import Merkle.Generic.Merkle (partialUpdateHash, partialUpdateLayer, newStructure, oldStructure, lazyExpandHash)
 import Merkle.Generic.HRecursionSchemes
---------------------------------------------
+import Merkle.Generic.Merkle (lazyExpandHash, newStructure, oldStructure, partialUpdateHash, partialUpdateLayer)
 import Optics hiding (Index)
-import Optics.TH
+
+--------------------------------------------
 
 -- can then use other function to add commit to get snapshot
 resolveMergeTrie ::

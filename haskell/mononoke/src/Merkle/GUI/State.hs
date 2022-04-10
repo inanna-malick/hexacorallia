@@ -18,8 +18,8 @@ fromLocalState :: Monad m => Store m -> LocalState -> BranchState m
 fromLocalState store ls =
   BranchState
     { -- FIXME: standardize repr, until then treat localstate current branch as main branch
-      bsMainBranch = fromLMT $ expandHash (sRead store) $ either error id $ lsCurrentCommit ls,
-      bsBranches = fmap (fromLMT . expandHash (sRead store)) <$> Map.toList (branches ls),
+      bsMainBranch = lazyExpandHash (sRead store) $ either error id $ lsCurrentCommit ls,
+      bsBranches = fmap (lazyExpandHash (sRead store)) <$> Map.toList (branches ls),
       bsFocus = MainBranch
     }
 

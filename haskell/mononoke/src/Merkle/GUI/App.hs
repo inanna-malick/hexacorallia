@@ -34,7 +34,7 @@ import qualified Merkle.GUI.Modal as Modal
 import Merkle.GUI.State
 import Merkle.Generic.BlakeHash
 import Merkle.Generic.HRecursionSchemes
-import Merkle.Generic.Merkle (fetchLazy, fetchLazyT, lazyExpandHash, oldStructure, newStructure, commitPartialUpdate)
+import Merkle.Generic.Merkle (commitPartialUpdate, fetchLazy, fetchLazyT, lazyExpandHash, newStructure, oldStructure)
 --------------------------------------------
 import Optics ((^.))
 

@@ -8,19 +8,18 @@
 module Merkle.Bonsai.Types.Render where
 
 --------------------------------------------
-
-import Data.Functor.Compose
 import Data.Functor.Const (Const (..))
 import Data.List (intersperse)
 import Data.List.NonEmpty (toList)
 import qualified Data.Map.Strict as Map
 import Data.Singletons.TH
 --------------------------------------------
-
 import Merkle.Bonsai.Types
 import Merkle.Generic.HRecursionSchemes as HR -- YOLO 420 SHINY AND CHROME
---------------------------------------------
 import Merkle.Render.Utils
+import Optics ((^.))
+
+--------------------------------------------
 
 -- | algebra, assumes all sub-entities have been rendered down to a list of lines
 renderM :: M (Const [String]) i -> Const [String] i
@@ -75,14 +74,14 @@ renderChange Change {..} = case _change of
     renderPath = mconcat . intersperse "/" . toList
 
 -- TODO: can't hcatM LMMT b/c 'm' is in the stack that needs to be HTraversable
-renderLMMT :: forall m (x :: MTag). SingI x => Monad m => LMMT m x -> m [String]
+renderLMMT :: forall m (x :: MTag). SingI x => Monad m => Term (Lazy m) x -> m [String]
 renderLMMT = getConst . hcata f
   where
-    f :: Alg (LMM m) (Const (m [String]))
-    f (HC (Tagged _ (HC (Compose m)))) = Const $ do
-      m' <- m
+    f :: Alg (Lazy m) (Const (m [String]))
+    f lazy = Const $ do
+      m' <- lazy ^. #node
       m'' <- hmapM (\x -> Const <$> getConst x) m'
       pure $ getConst $ renderM m''
 
-showLMMT :: SingI x => LMMT IO x -> IO ()
+showLMMT :: SingI x => Term (Lazy IO) x -> IO ()
 showLMMT = (>>= const (pure ())) . (>>= traverse putStrLn) . renderLMMT
