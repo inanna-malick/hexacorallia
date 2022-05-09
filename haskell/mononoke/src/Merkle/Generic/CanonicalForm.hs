@@ -5,13 +5,11 @@
 --   Agnostic with regard to backend
 module Merkle.Generic.CanonicalForm where
 
-import Control.Monad.Except
 import qualified Control.Monad.State as S
 import qualified Data.Aeson
 import qualified Data.ByteString as B
 import Data.ByteString.Builder as BB (toLazyByteString, word32LE)
 import qualified Data.ByteString.Lazy as BL
-import Data.Functor.Classes
 import Data.Functor.Const (Const (..))
 import Data.Kind (Type)
 import Data.Singletons.TH
@@ -19,11 +17,6 @@ import Data.Word
 import GHC.Generics
 import qualified Merkle.Generic.BlakeHash as BH
 import Merkle.Generic.HRecursionSchemes
-import Merkle.Generic.Store
-import Mu.GRpc.Client.TyApps
-import Mu.Quasi.GRpc
-import Mu.Schema hiding (Term (..))
-import Network.Socket (PortNumber)
 
 -- | some canonical encoding (such that it can be stored in a hash store)
 --   with decode function

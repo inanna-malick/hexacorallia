@@ -12,8 +12,6 @@ module Merkle.Bonsai.Types.Tags where
 
 --------------------------------------------
 import           Data.Singletons.TH
-import           Data.Text (Text)
-import qualified Data.Text as T
 --------------------------------------------
 
 

@@ -70,6 +70,8 @@ dependencies:
   - threepenny-gui
   - threepenny-gui-flexbox
 
+data-files:
+  - static/*
 
 library:
   source-dirs: src

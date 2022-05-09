@@ -15,6 +15,9 @@ maintainer:     Inanna Malick
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
+data-files:
+    static/LICENSE.txt
+    static/vaporwave.jpg
 
 source-repository head
   type: git
